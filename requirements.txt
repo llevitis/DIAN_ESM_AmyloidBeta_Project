@@ -77,7 +77,7 @@ parso==0.4.0
 patsy==0.5.1
 pexpect==4.7.0
 pickleshare==0.7.5
-Pillow==6.0.0
+pillow==6.2.0
 plinkio==0.9.6
 plotly==4.5.0
 plotly-express==0.4.1
