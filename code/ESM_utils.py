@@ -15,11 +15,11 @@ from sklearn.utils import resample
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import MinMaxScaler
 from statsmodels.sandbox.stats.multicomp import multipletests
-import matlab.engine
+#import matlab.engine
 import sys
 
-eng = matlab.engine.start_matlab()
-eng.addpath('../',nargout=0)
+#eng = matlab.engine.start_matlab()
+#eng.addpath('../',nargout=0)
 
 def Extract_Values_from_Atlas(files_in, atlas, 
                               mask = None, mask_threshold = 0,
@@ -699,8 +699,8 @@ def Plot_Probabilites(prob_matrix, col_order = [], ind_order = [],
     fig, ax = plt.subplots(figsize=figsize) 
     forplot = prob_matrix.loc[ind_order, col_order]
     g = sns.heatmap(forplot, vmin, vmax, cmap=cmap, ax=ax)
-    plt.xlabel('Regions (highest - lowest p)', fontsize=48)
-    plt.ylabel('Subjects (lowest - highest p)', fontsize=48)
+    plt.xlabel('Regions (highest - lowest p)', fontsize=24)
+    plt.ylabel('Subjects (lowest - highest p)', fontsize=24)
     plt.show()
     
     return forplot.columns
