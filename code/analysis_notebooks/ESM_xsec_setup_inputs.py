@@ -65,11 +65,11 @@ def exclude_subcortical_rois(df, roi_cols_to_exclude):
     df[roi_cols_to_exclude] = 0
     return df
 
-def main(ab_prob_matrix_fp, esm_input_file, connectivity_type):
+def main():
     parser = ArgumentParser()
-    parser.add_argument("ab_prob_matrix_dir",
+    parser.add_argument("--ab_prob_matrix_dir",
                         help="Please pass the files directory containing the PiB-PET probability matrices")
-    parser.add_argument("esm_input_file",
+    parser.add_argument("--esm_input_file",
                         help="Please provide desired ESM input filename.")
     parser.add_argument("--connectivity_type",
                         help="Specify type of connectivity, e.g. FC or ACP")
