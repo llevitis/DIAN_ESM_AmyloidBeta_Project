@@ -2,6 +2,7 @@
 
 import os
 import glob 
+import sys
 import shutil 
 import re
 
@@ -19,6 +20,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import math
 from statannot import add_stat_annotation
+
+sys.path.insert(0,'..')
+import ESM_utils as esm
 
 from scipy import stats
 from sklearn.metrics import mean_squared_error
@@ -49,7 +53,7 @@ def add_metadata_to_amyloid_df(df, genetic_df, clinical_df):
                 df.loc[(df.index == sub) & (df.visit == visit), "DIAN_EYO"] = dian_eyo[0]
                 df.loc[(df.index == sub) & (df.visit == visit), "VISITAGEc"] = age[0]
                 df.loc[(df.index == sub) & (df.visit == visit), "visitNumber"] = i + 1
-                df.loc[(df.index == sub) & (df.visit == visit), "Mutation"] = mutation
+                df.loc[(df.index == sub) & (df.visit == visit), "Mutation"] = mutation 
     return df
 
 def get_rois_to_analyze(roi_colnames, rois_to_exclude): 
@@ -76,6 +80,7 @@ def main():
     results = parser.parse_args()
 
     ab_prob_matrix_dir = results.ab_prob_matrix_dir
+    esm_input_file = results.esm_input_file
     connectivity_type = results.connectivity_type
 
     file_paths = sorted(glob.glob(ab_prob_matrix_dir))
@@ -87,7 +92,8 @@ def main():
     ab_prob_df_list = []
     for i, fp in enumerate(file_paths): 
         ab_curr_prob_df = pd.read_csv(file_paths[i], index_col=0)
-        visit = file_paths[i].split(".")[0].split("_")[-1]
+        visit = file_paths[i].split(".")[-2].split("_")[-1]
+        print(visit)
         ab_curr_prob_df.loc[:, 'visit'] = visit
         #drop participants that did not pass QC according to PUP's PET processing
         for sub in ab_curr_prob_df.index: 
@@ -100,14 +106,15 @@ def main():
     #add metadata to the dataframe 
     ab_prob_all_visits_df = add_metadata_to_amyloid_df(ab_prob_all_visits_df,
                                                        genetic_df, 
-                                                       clinical_df)
-
+                                                       clinical_df)    
+    
     # extract df for subjects' first timepoint 
     ab_prob_t1 = ab_prob_all_visits_df[ab_prob_all_visits_df.visitNumber == 1]
-    ab_prob_t1_mc = ab_prob_t1_mc[ab_prob_t1_mc.Mutation == 1]
+    ab_prob_t1_mc = ab_prob_t1[ab_prob_t1.Mutation == 1]
 
     # get column names corresponding to ROIs
-    roi_cols = dian_pup_voxelwise_ecdf_all_visits.columns[0:78]
+    roi_cols = ab_prob_t1_mc.columns[0:78]
+
 
     # prepare inputs for ESM 
     output_dir = '../../data/DIAN/esm_input_mat_files/'
