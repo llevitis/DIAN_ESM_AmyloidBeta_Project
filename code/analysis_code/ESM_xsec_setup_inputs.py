@@ -125,7 +125,7 @@ def main():
     # get MATLAB compatible indices of ROIs to use as epicenters
     epicenters_idx = []
     for i, roi in enumerate(roi_cols): 
-        if roi.to_lower() in epicenters_for_esm: 
+        if roi.lower() in epicenters_for_esm: 
             epicenters_idx.append(i+1)
 
     # prepare inputs for ESM 

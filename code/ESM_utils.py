@@ -919,7 +919,7 @@ def Prepare_Inputs_for_ESM(prob_matrices, ages, output_dir, file_name,
                 raise ValueError('length mismatch between "ages" and prob_matrices. Does "ages" have NaNs?')
             prob_matrices.update({key: ages_list.values})
 
-    if type(rois) == list:  
+    if type(epicenters_idx) == list:  
         prob_matrices.update({'epicenters_idx': epicenters_idx})
 
     fl_out = os.path.join(output_dir,file_name)
