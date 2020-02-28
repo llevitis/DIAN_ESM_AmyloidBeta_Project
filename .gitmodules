@@ -1,3 +1,6 @@
 [submodule "esm"]
 	path = esm
 	url = https://github.com/llevitis/esm.git
+[submodule "data"]
+	path = data
+	url = https://github.com/llevitis/esm_data.git
