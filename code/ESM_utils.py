@@ -822,7 +822,7 @@ def Evaluate_Probabilities(prob_matrix, to_test, alpha_threshold = 0.05, FDR=Non
 
 def Prepare_Inputs_for_ESM(prob_matrices, ages, output_dir, file_name,
                            conn_matrices = [], conn_mat_names = [],
-                           conn_out_names = [], figure = True):
+                           conn_out_names = [], epicenters_idx = [], figure = True):
     '''
     This script will convert data into a matfile compatible with
     running the ESM, and will print outputs to be entered into
@@ -907,7 +907,6 @@ def Prepare_Inputs_for_ESM(prob_matrices, ages, output_dir, file_name,
                 except:
                 	sns.heatmap(newmat.astype(float))
                 	plt.show()
-
     if type(ages) == np.ndarray or type(ages) == list:
         ages = pandas.Series(ages)
         if len(ages.dropna()) != len(df):
@@ -919,6 +918,10 @@ def Prepare_Inputs_for_ESM(prob_matrices, ages, output_dir, file_name,
             if len(ages_list.dropna()) != len(df):
                 raise ValueError('length mismatch between "ages" and prob_matrices. Does "ages" have NaNs?')
             prob_matrices.update({key: ages_list.values})
+
+    if type(rois) == list:  
+        prob_matrices.update({'epicenters_idx': epicenters_idx})
+
     fl_out = os.path.join(output_dir,file_name)
     savemat(fl_out,prob_matrices)
     print('ESM input written to',fl_out)

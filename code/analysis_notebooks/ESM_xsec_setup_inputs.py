@@ -77,11 +77,18 @@ def main():
                         help="Please provide desired ESM input filename.")
     parser.add_argument("--connectivity_type",
                         help="Specify type of connectivity, e.g. FC or ACP")
+    parser.add_argument("--epicenters_for_esm",
+                        help="Please provide a list of regions to test as \
+                              epicenters (all lower-case)",
+                        nargs="+",
+                        type=str,
+                        default=None)
     results = parser.parse_args()
 
     ab_prob_matrix_dir = results.ab_prob_matrix_dir
     esm_input_file = results.esm_input_file
     connectivity_type = results.connectivity_type
+    epicenters_for_esm = results.epicenters_for_esm
 
     file_paths = sorted(glob.glob(ab_prob_matrix_dir))
 
@@ -115,6 +122,11 @@ def main():
     # get column names corresponding to ROIs
     roi_cols = ab_prob_t1_mc.columns[0:78]
 
+    # get MATLAB compatible indices of ROIs to use as epicenters
+    epicenters_idx = []
+    for i, roi in enumerate(roi_cols): 
+        if roi.to_lower() in epicenters_for_esm: 
+            epicenters_idx.append(i+1)
 
     # prepare inputs for ESM 
     output_dir = '../../data/DIAN/esm_input_mat_files/'
@@ -126,12 +138,14 @@ def main():
     ages = list(ab_prob_t1_mc.loc[:, 'VISITAGEc'])
 
     esm.Prepare_Inputs_for_ESM(prob_matrices, 
-                            ages, 
-                            output_dir,
-                            file_names, 
-                            conn_matrices,
-                            conn_mat_names,
-                            conn_out_names)
+                               ages, 
+                               output_dir,
+                               file_names, 
+                               conn_matrices,
+                               conn_mat_names,
+                               conn_out_names,
+                               epicenters_idx,
+                               figure=False)
 
 
 
