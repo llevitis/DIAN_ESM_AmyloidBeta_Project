@@ -89,6 +89,7 @@ def main():
     esm_input_file = results.esm_input_file
     connectivity_type = results.connectivity_type
     epicenters_for_esm = results.epicenters_for_esm
+    print(epicenters_for_esm)
 
     file_paths = sorted(glob.glob(ab_prob_matrix_dir))
 
@@ -100,7 +101,6 @@ def main():
     for i, fp in enumerate(file_paths): 
         ab_curr_prob_df = pd.read_csv(file_paths[i], index_col=0)
         visit = file_paths[i].split(".")[-2].split("_")[-1]
-        print(visit)
         ab_curr_prob_df.loc[:, 'visit'] = visit
         #drop participants that did not pass QC according to PUP's PET processing
         for sub in ab_curr_prob_df.index: 
@@ -121,11 +121,13 @@ def main():
 
     # get column names corresponding to ROIs
     roi_cols = ab_prob_t1_mc.columns[0:78]
+    roi_cols_to_keep = [y for y in roi_cols if not all([x==0 for x in ab_prob_t1_mc[y]])]
 
     # get MATLAB compatible indices of ROIs to use as epicenters
     epicenters_idx = []
-    for i, roi in enumerate(roi_cols): 
-        if roi.lower() in epicenters_for_esm: 
+    for i, roi in enumerate(roi_cols_to_keep):
+        if roi.lower() in epicenters_for_esm:  
+            print(roi)
             epicenters_idx.append(i+1)
 
     # prepare inputs for ESM 
@@ -136,6 +138,8 @@ def main():
     file_names = esm_input_file + '.mat'
     prob_matrices = {'test_data': ab_prob_t1_mc.loc[:, roi_cols]}
     ages = list(ab_prob_t1_mc.loc[:, 'VISITAGEc'])
+    sub_ids = list(ab_prob_t1_mc.index)
+    visit_labels = list(ab_prob_t1_mc.loc[:, 'visit'])
 
     esm.Prepare_Inputs_for_ESM(prob_matrices, 
                                ages, 
@@ -145,7 +149,14 @@ def main():
                                conn_mat_names,
                                conn_out_names,
                                epicenters_idx,
+                               sub_ids, 
+                               visit_labels,
                                figure=False)
+
+    
+
+
+    
 
 
 

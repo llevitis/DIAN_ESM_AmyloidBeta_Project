@@ -822,7 +822,8 @@ def Evaluate_Probabilities(prob_matrix, to_test, alpha_threshold = 0.05, FDR=Non
 
 def Prepare_Inputs_for_ESM(prob_matrices, ages, output_dir, file_name,
                            conn_matrices = [], conn_mat_names = [],
-                           conn_out_names = [], epicenters_idx = [], figure = True):
+                           conn_out_names = [], epicenters_idx = [], 
+                           sub_ids = [], visit_labels = [], figure = True):
     '''
     This script will convert data into a matfile compatible with
     running the ESM, and will print outputs to be entered into
@@ -918,6 +919,12 @@ def Prepare_Inputs_for_ESM(prob_matrices, ages, output_dir, file_name,
             if len(ages_list.dropna()) != len(df):
                 raise ValueError('length mismatch between "ages" and prob_matrices. Does "ages" have NaNs?')
             prob_matrices.update({key: ages_list.values})
+
+    if type(sub_ids) == list: 
+        prob_matrices.update({'sub_ids': sub_ids})
+    
+    if type(visit_labels) == list: 
+        prob_matrices.update({'visit_labels': visit_labels})
 
     if type(epicenters_idx) == list:  
         prob_matrices.update({'epicenters_idx': epicenters_idx})
