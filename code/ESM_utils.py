@@ -897,8 +897,8 @@ def Prepare_Inputs_for_ESM(prob_matrices, ages, output_dir, file_name,
                 connmat = jnk[conn_mat_names[i]]
             newmat = np.array([thing[goodcols] for thing in connmat[goodcols]])
             prob_matrices.update({conn_out_names[i]: newmat})
-            jnk[file_name] = newmat
-            savemat(os.path.join(output_dir,conn_out_names[i]), jnk)
+            #jnk[file_name] = newmat
+            #savemat(os.path.join(output_dir,conn_out_names[i]), jnk)
             print('new connectivity matrix size: for %s'%conn_out_names[i],newmat.shape)
             if figure:
                 plt.close()
