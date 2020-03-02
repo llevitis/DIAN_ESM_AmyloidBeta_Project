@@ -5,31 +5,15 @@ import glob
 import sys
 import shutil 
 import re
-
-import nibabel as nib
-
 from argparse import ArgumentParser
 
 import pandas as pd
 import numpy as np
-import nilearn.plotting as plotting
-import itertools
-import matplotlib.colors as colors
-import seaborn as sns
-
+import math 
 import matplotlib.pyplot as plt
-import math
-from statannot import add_stat_annotation
 
 sys.path.insert(0,'..')
 import ESM_utils as esm
-
-from scipy import stats
-from sklearn.metrics import mean_squared_error
-from sklearn.metrics import mean_absolute_error
-from sklearn.decomposition import PCA
-from sklearn.linear_model import LinearRegression
-from nilearn import input_data, image
 
 def intersection(lst1, lst2): 
   
@@ -152,13 +136,6 @@ def main():
                                sub_ids, 
                                visit_labels,
                                figure=False)
-
-    
-
-
-    
-
-
 
 if __name__ == "__main__":
     main()
