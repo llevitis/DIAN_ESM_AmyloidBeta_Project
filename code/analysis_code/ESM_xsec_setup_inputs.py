@@ -135,6 +135,7 @@ def main():
                                epicenters_idx,
                                sub_ids, 
                                visit_labels,
+                               roi_cols_to_keep,
                                figure=False)
 
 if __name__ == "__main__":
