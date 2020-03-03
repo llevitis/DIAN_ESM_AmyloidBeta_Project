@@ -823,7 +823,8 @@ def Evaluate_Probabilities(prob_matrix, to_test, alpha_threshold = 0.05, FDR=Non
 def Prepare_Inputs_for_ESM(prob_matrices, ages, output_dir, file_name,
                            conn_matrices = [], conn_mat_names = [],
                            conn_out_names = [], epicenters_idx = [], 
-                           sub_ids = [], visit_labels = [], figure = True):
+                           sub_ids = [], visit_labels = [], roi_labels = [],
+                           figure = True):
     '''
     This script will convert data into a matfile compatible with
     running the ESM, and will print outputs to be entered into
@@ -928,6 +929,9 @@ def Prepare_Inputs_for_ESM(prob_matrices, ages, output_dir, file_name,
 
     if type(epicenters_idx) == list:  
         prob_matrices.update({'epicenters_idx': epicenters_idx})
+
+    if type(roi_labels) == list:  
+        prob_matrices.update({'roi_labels': roi_labels})
 
     fl_out = os.path.join(output_dir,file_name)
     savemat(fl_out,prob_matrices)
@@ -1083,7 +1087,7 @@ def Plot_ESM_results(mat, labels, subids, lit):
     roi_test.columns = ['label','r2']
     
     plt.close()
-    g = sns.factorplot(x='label', y='r2',data=roi_test, ci=None, 
+    g = sns.catplot(x='label', y='r2',data=roi_test, ci=None, 
                        order = roi_test.sort_values('r2',ascending=False)['label'])
     g.set_xticklabels(rotation=90)
     g.fig.set_size_inches((14,6))
