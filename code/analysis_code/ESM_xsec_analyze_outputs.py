@@ -32,7 +32,7 @@ from sklearn.linear_model import LinearRegression
 from nilearn import input_data, image
 
 
-def plot_aggregate_roi_performance(esm_output, output_dir): 
+def plot_aggreggate_roi_performance(esm_output, output_dir): 
     plt.figure(figsize=(5,5))
     sns.regplot(esm_output['ref_pattern'].mean(1), esm_output['model_solutions0'].mean(1), color="indianred")
     r,p = stats.pearsonr(esm_output['ref_pattern'].mean(1), esm_output['model_solutions0'].mean(1))
