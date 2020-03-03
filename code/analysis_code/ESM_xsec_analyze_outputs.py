@@ -31,7 +31,7 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
 from nilearn import input_data, image
 
-
+## look at mutation differences
 def plot_aggreggate_roi_performance(esm_output, output_dir): 
     plt.figure(figsize=(5,5))
     sns.regplot(esm_output['ref_pattern'].mean(1), esm_output['model_solutions0'].mean(1), color="indianred")
@@ -49,6 +49,25 @@ def plot_aggreggate_roi_performance(esm_output, output_dir):
     plt.tight_layout()
     plt.savefig(output_path)
 
+def plot_hist_subject_performance(res, output_dir): 
+    plt.figure(figsize=(5,5))
+    sns.stripplot(x="mutation_type", y="model_r2", data=res[res.EYO > 0])
+    plt.show()
+
+    
+def get_mutation_type(subs, genetic_df):
+    mutation_type = [] 
+    for sub in subs: 
+        mt = genetic_df[(genetic_df.IMAGID == sub)].MUTATIONTYPE.values[0]
+        mutation_type.append(mt)
+    return mutation_type
+
+def get_eyo(subs, visit_labels, clinical_df):
+    eyos = []
+    for i, sub in enumerate(subs):
+        eyo = clinical_df[(clinical_df.IMAGID == sub) & (clinical_df.visit == visit_labels[i])].DIAN_EYO.values[0]
+        eyos.append(eyo)
+    return eyos
 
 def main(): 
     parser = ArgumentParser()
@@ -56,6 +75,10 @@ def main():
                         help="Please pass base filename of ESM output file to analyze")
 
     results = parser.parse_args()
+
+    genetic_df = pd.read_csv("../../data/DIAN/participant_metadata/GENETIC_D1801.csv")
+    clinical_df = pd.read_csv("../../data/DIAN/participant_metadata/CLINICAL_D1801.csv")
+
     esm_output_file = "../../data/DIAN/esm_output_mat_files/" + results.filename + ".mat"
     esm_output = esm.loadmat(esm_output_file)
     subs = esm_output['sub_ids']
@@ -74,6 +97,14 @@ def main():
                                    labels=roi_labels,
                                    lit=True,
                                    plot=False)
+
+    for i, sub in enumerate(res.index): 
+        res.loc[sub, 'esm_idx'] = i 
+    
+    res['mutation_type'] = get_mutation_type(res.index, genetic_df)
+    res['visit_label'] = visit_labels
+    res['EYO'] = get_eyo(res.index, res.visit_label, clinical_df)
+    
 
 if __name__ == "__main__":
     main()
