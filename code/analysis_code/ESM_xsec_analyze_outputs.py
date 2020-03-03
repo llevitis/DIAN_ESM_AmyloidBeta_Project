@@ -33,13 +33,34 @@ from nilearn import input_data, image
 
 def main(): 
     parser = ArgumentParser()
-    parser.add_argument("esm_output_file",
-                        help="Please pass base filename of ESM output\
-                              file to analyze")
+    parser.add_argument("filename",
+                        help="Please pass base filename of ESM output file to analyze")
 
     results = parser.parse_args()
-    esm_output_file = "../data/DIAN/esm_output_file" + results.esm_output_file
+    esm_output_file = "../../data/DIAN/esm_output_mat_files/" + results.filename
     esm_output = esm.loadmat(esm_output_file)
-    subs = esm_output_file['sub_ids']
-    visit_labels = esm_output_file['visit_labels']
+    subs = esm_output['sub_ids']
+    visit_labels = esm_output['visit_labels']
+    roi_labels = esm_output['roi_labels']
+
+    plt.figure(1)
+    sns.regplot(esm_output['ref_pattern'].mean(1), esm_output['model_solutions0'].mean(1)) 
+    plt.title("Reference vs Predicted Average Pattern Across Regions", fontsize=18)
+    plt.xlabel("Reference", fontsize=18)
+    plt.ylabel("Predicted", fontsize=18)
+
+    plt.figure(2)    
+    sns.regplot(esm_output['ref_pattern'].mean(0), esm_output['model_solutions0'].mean(0)) 
+    plt.title("Reference vs Predicted Average Pattern Across Subjects", fontsize=18)
+    plt.show()
+
+    res = esm.Evaluate_ESM_Results(esm_output_file,
+                                   sids=subs,
+                                   labels=roi_labels,
+                                   lit=True,
+                                   plot=False)
+
+
+if __name__ == "__main__":
+    main()
     
