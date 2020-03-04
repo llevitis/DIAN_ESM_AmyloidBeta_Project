@@ -53,6 +53,54 @@ def exclude_subcortical_rois(df, roi_cols_to_exclude):
     df[roi_cols_to_exclude] = 0
     return df
 
+def sort_df(ab_prob_df):  
+    # sort subjects
+    ind_sorter = pandas.DataFrame(ab_prob_df,copy=True)
+    ind_sorter.loc[:,'mean'] = ab_prob_df.mean(axis=1)
+    ind_order = ind_sorter.sort_values('mean',axis=0,ascending=True).index
+
+    # column sorter
+    col_sorter = pandas.DataFrame(ab_prob_df,copy=True)
+    col_sorter.loc['mean'] = ab_prob_df.mean(axis=0)
+    col_order = col_sorter.sort_values('mean',axis=1,ascending=False).columns
+
+    ab_prob_df_sorted = ab_prob_df.loc[ind_order, col_order]
+    return ab_prob_df_sorted
+
+
+def fsigmoid(x, a, b):
+    # Define sigmoid function
+    return 1.0 / (1.0 + np.exp(-a*(x-b)))
+
+
+def sigmoid_normalization(ab_df): 
+    '''
+    For each ROI, a sigmoidal function is fit to the values across all 
+    individuals to estimate the parameters of a sigmoid for this ROI. 
+    The original ROI signal is rescaled by a multiple of this sigmoid 
+    (1/2 the original signal + 1/2 orig * sigmoid). 
+    
+    ab_prob_df -- A subject x ROI matrix of AB binding probabilities (pandas DataFrame).
+    '''
+    # sort the original signal first  
+    ab_prob_df_sorted = sort_df(ab_prob_df)
+    ab_prob_df_scaled = pd.DataFrame(index=ab_prob_df_sorted.index, columns=ab_prob_df_sorted.columns)
+    for roi in ab_prob_df_sorted.columns: 
+        vals = ab_prob_df_sorted[roi]
+        vals_idx = np.arange(0, len(vals))
+        popt, pcov = curve_fit(fsigmoid, vals_idx, vals, method='dogbox', bounds=([0,0],[1, len(vals)]))
+    
+        x = np.linspace(0, len(vals), num=len(vals))
+        y = fsigmoid(x, *popt)
+
+        # wt1 and wt2 correspond to how much we're scaling the contribution of original
+        # and rescaled signals
+        wt1, wt2 = 1, 1
+        vals_scaled = (wt1*y + wt2*vals) / 2
+        ab_prob_df_scaled.loc[:, roi] = vals_scaled.values
+    ab_prob_df_scaled = ab_prob_df_scaled.loc[ab_prob_df.index, ab_prob_df.columns]
+    return ab_prob_df_scaled
+
 def main():
     parser = ArgumentParser()
     parser.add_argument("--ab_prob_matrix_dir",
