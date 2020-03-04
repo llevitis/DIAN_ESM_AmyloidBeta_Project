@@ -703,7 +703,7 @@ def Plot_Probabilites(prob_matrix, col_order = [], ind_order = [],
     plt.ylabel('Subjects (lowest - highest p)', fontsize=24)
     plt.show()
     
-    return forplot.columns
+    return forplot
 
 
 
