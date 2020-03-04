@@ -51,10 +51,29 @@ def plot_aggreggate_roi_performance(esm_output, output_dir):
 
 def plot_hist_subject_performance(res, output_dir): 
     plt.figure(figsize=(5,5))
-    sns.stripplot(x="mutation_type", y="model_r2", data=res[res.EYO > 0])
-    plt.show()
+    g = sns.stripplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", dodge=True)
+    g.set(xticklabels=["PSEN1", "PSEN2", "APP"])
+    plt.xlabel("Mutation Type")
+    plt.ylabel("Within subject r2")
+    plt.title("ESM X-Sec Performance Across Mutation Types")
+    output_path = os.path.join(output_dir, "within_subject_xsec_perform_across_muttypes.png")
+    plt.tight_layout()
+    plt.savefig(output_path)
 
-    
+def set_ab_positive(esm_output_df, early_acc_rois):
+    cols_to_analyze = [] 
+    for col in esm_output_df.columns: 
+        for roi in early_acc_rois: 
+            if roi in col.lower(): 
+                cols_to_analyze.append(col)
+    for sub in esm_output_df.index:
+        avg_ab_val = np.mean(list(esm_output_df.loc[sub, cols_to_analyze]))
+        if avg_ab_val > 0.2: 
+            esm_output_df.loc[sub, 'AB_Positive'] = True
+        else: 
+            esm_output_df.loc[sub, 'AB_Positive'] = False
+    return esm_output_df
+
 def get_mutation_type(subs, genetic_df):
     mutation_type = [] 
     for sub in subs: 
@@ -81,6 +100,12 @@ def main():
 
     esm_output_file = "../../data/DIAN/esm_output_mat_files/" + results.filename + ".mat"
     esm_output = esm.loadmat(esm_output_file)
+    esm_output_df = pd.DataFrame(index=esm_output['sub_ids'], 
+                                 columns=esm_output['roi_labels'], 
+                                 data=esm_output['ref_pattern'].transpose())
+    
+    early_acc_rois = ["precuneus", "medial orbitofrontal", "posterior cingulate", "caudate", "putamen"] 
+    esm_output_df = set_ab_positive(esm_output_df, early_acc_rois)
     subs = esm_output['sub_ids']
     visit_labels = esm_output['visit_labels']
     roi_labels = esm_output['roi_labels']
@@ -90,7 +115,7 @@ def main():
     if not os.path.exists(output_dir): 
         os.mkdir(output_dir)
     
-    plot_aggregate_roi_performance(esm_output, output_dir)
+    plot_aggreggate_roi_performance(esm_output, output_dir)
 
     res = esm.Evaluate_ESM_Results(esm_output_file,
                                    sids=subs,
@@ -104,7 +129,9 @@ def main():
     res['mutation_type'] = get_mutation_type(res.index, genetic_df)
     res['visit_label'] = visit_labels
     res['EYO'] = get_eyo(res.index, res.visit_label, clinical_df)
+    res['AB_Positive'] = esm_output_df['AB_Positive']
     
+    plot_hist_subject_performance(res, output_dir)
 
 if __name__ == "__main__":
     main()
