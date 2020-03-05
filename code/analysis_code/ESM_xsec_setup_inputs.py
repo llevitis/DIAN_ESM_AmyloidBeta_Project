@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0,'..')
 import ESM_utils as esm
+from scipy.optimize import curve_fit
 
 def intersection(lst1, lst2): 
   
@@ -55,12 +56,12 @@ def exclude_subcortical_rois(df, roi_cols_to_exclude):
 
 def sort_df(ab_prob_df):  
     # sort subjects
-    ind_sorter = pandas.DataFrame(ab_prob_df,copy=True)
+    ind_sorter = pd.DataFrame(ab_prob_df,copy=True)
     ind_sorter.loc[:,'mean'] = ab_prob_df.mean(axis=1)
     ind_order = ind_sorter.sort_values('mean',axis=0,ascending=True).index
 
     # column sorter
-    col_sorter = pandas.DataFrame(ab_prob_df,copy=True)
+    col_sorter = pd.DataFrame(ab_prob_df,copy=True)
     col_sorter.loc['mean'] = ab_prob_df.mean(axis=0)
     col_order = col_sorter.sort_values('mean',axis=1,ascending=False).columns
 
@@ -73,7 +74,7 @@ def fsigmoid(x, a, b):
     return 1.0 / (1.0 + np.exp(-a*(x-b)))
 
 
-def sigmoid_normalization(ab_df): 
+def sigmoid_normalization(ab_prob_df): 
     '''
     For each ROI, a sigmoidal function is fit to the values across all 
     individuals to estimate the parameters of a sigmoid for this ROI. 
@@ -109,6 +110,10 @@ def main():
                         help="Please provide desired ESM input filename.")
     parser.add_argument("--connectivity_type",
                         help="Specify type of connectivity, e.g. FC or ACP")
+    parser.add_argument("--scale", 
+                        type=bool,
+                        default=False,
+                        help="Should the amyloid beta probabilities undergo within ROI sigmoid normalization.")
     parser.add_argument("--epicenters_for_esm",
                         help="Please provide a list of regions to test as \
                               epicenters (all lower-case)",
@@ -121,7 +126,10 @@ def main():
     esm_input_file = results.esm_input_file
     connectivity_type = results.connectivity_type
     epicenters_for_esm = results.epicenters_for_esm
-    print(epicenters_for_esm)
+    scale = results.scale
+
+    if scale == True: 
+        esm_input_file = esm_input_file + "_scaled"
 
     file_paths = sorted(glob.glob(ab_prob_matrix_dir))
 
@@ -147,13 +155,10 @@ def main():
                                                        genetic_df, 
                                                        clinical_df)    
     
-    # extract df for subjects' first timepoint 
-    ab_prob_t1 = ab_prob_all_visits_df[ab_prob_all_visits_df.visitNumber == 1]
-    ab_prob_t1_mc = ab_prob_t1[ab_prob_t1.Mutation == 1]
 
     # get column names corresponding to ROIs
-    roi_cols = ab_prob_t1_mc.columns[0:78]
-    roi_cols_to_keep = [y for y in roi_cols if not all([x==0 for x in ab_prob_t1_mc[y]])]
+    roi_cols = ab_prob_all_visits_df.columns[0:78]
+    roi_cols_to_keep = [y for y in roi_cols if not all([x==0 for x in ab_prob_all_visits_df[y]])]
 
     # get MATLAB compatible indices of ROIs to use as epicenters
     epicenters_idx = []
@@ -161,6 +166,12 @@ def main():
         if roi.lower() in epicenters_for_esm:  
             print(roi)
             epicenters_idx.append(i+1)
+    
+    # extract df for subjects' first timepoint 
+    ab_prob_t1 = ab_prob_all_visits_df[ab_prob_all_visits_df.visitNumber == 1]
+    if scale == True: 
+        ab_prob_t1[roi_cols_to_keep] = sigmoid_normalization(ab_prob_t1[roi_cols_to_keep])
+    ab_prob_t1_mc = ab_prob_t1[ab_prob_t1.Mutation == 1]
 
     # prepare inputs for ESM 
     output_dir = '../../data/DIAN/esm_input_mat_files/'
