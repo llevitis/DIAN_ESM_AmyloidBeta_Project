@@ -32,13 +32,14 @@ from sklearn.linear_model import LinearRegression
 from nilearn import input_data, image
 
 ## look at mutation differences
-def plot_aggreggate_roi_performance(esm_output, output_dir): 
+def plot_aggregate_roi_performance(esm_output, output_dir, ref_pattern): 
     plt.figure(figsize=(5,5))
-    sns.regplot(esm_output['ref_pattern'].mean(1), esm_output['model_solutions0'].mean(1), color="indianred")
-    r,p = stats.pearsonr(esm_output['ref_pattern'].mean(1), esm_output['model_solutions0'].mean(1))
+    sns.regplot(esm_output[ref_pattern].mean(1), esm_output['model_solutions0'].mean(1), color="indianred")
+    r,p = stats.pearsonr(esm_output[ref_pattern].mean(1), esm_output['model_solutions0'].mean(1))
     r2 = r ** 2 
-    xmin = np.min(esm_output['ref_pattern'].mean(1))
+    xmin = np.min(esm_output[ref_pattern].mean(1))
     ymax = np.max(esm_output['model_solutions0'].mean(1))
+    print(ymax)
     plt.text(xmin, ymax, "$r^2$ = {0}".format(np.round(r2, 2), fontsize=16))
     plt.xticks(x=16)
     plt.yticks(y=16)
@@ -60,19 +61,19 @@ def plot_hist_subject_performance(res, output_dir):
     plt.tight_layout()
     plt.savefig(output_path)
 
-def set_ab_positive(esm_output_df, early_acc_rois):
+def set_ab_positive(ref_pattern_df, early_acc_rois):
     cols_to_analyze = [] 
-    for col in esm_output_df.columns: 
+    for col in ref_pattern_df.columns: 
         for roi in early_acc_rois: 
             if roi in col.lower(): 
                 cols_to_analyze.append(col)
-    for sub in esm_output_df.index:
-        avg_ab_val = np.mean(list(esm_output_df.loc[sub, cols_to_analyze]))
+    for sub in ref_pattern_df.index:
+        avg_ab_val = np.mean(list(ref_pattern_df.loc[sub, cols_to_analyze]))
         if avg_ab_val > 0.2: 
-            esm_output_df.loc[sub, 'AB_Positive'] = True
+            ref_pattern_df.loc[sub, 'AB_Positive'] = True
         else: 
-            esm_output_df.loc[sub, 'AB_Positive'] = False
-    return esm_output_df
+            ref_pattern_df.loc[sub, 'AB_Positive'] = False
+    return ref_pattern_df
 
 def get_mutation_type(subs, genetic_df):
     mutation_type = [] 
@@ -92,20 +93,33 @@ def main():
     parser = ArgumentParser()
     parser.add_argument("filename",
                         help="Please pass base filename of ESM output file to analyze")
+    parser.add_argument("--scale", 
+                        type=bool, 
+                        default=False, 
+                        help="Whether or not the input had been sigmoid normalized prior to running ESM.")
 
     results = parser.parse_args()
+    scale = results.scale
+
+    if scale == True: 
+        ref_pattern = "ref_pattern_orig"
+    else: 
+        ref_pattern = "ref_pattern"
 
     genetic_df = pd.read_csv("../../data/DIAN/participant_metadata/GENETIC_D1801.csv")
     clinical_df = pd.read_csv("../../data/DIAN/participant_metadata/CLINICAL_D1801.csv")
 
     esm_output_file = "../../data/DIAN/esm_output_mat_files/" + results.filename + ".mat"
     esm_output = esm.loadmat(esm_output_file)
-    esm_output_df = pd.DataFrame(index=esm_output['sub_ids'], 
+
+    ref_pattern_df = pd.DataFrame(index=esm_output['sub_ids'], 
                                  columns=esm_output['roi_labels'], 
-                                 data=esm_output['ref_pattern'].transpose())
-    
+                                 data=esm_output[ref_pattern].transpose())
+    pred_pattern_df = pd.DataFrame(index=esm_output['sub_ids'], 
+                                 columns=esm_output['roi_labels'], 
+                                 data=esm_output['model_solutions0'].transpose())
     early_acc_rois = ["precuneus", "medial orbitofrontal", "posterior cingulate", "caudate", "putamen"] 
-    esm_output_df = set_ab_positive(esm_output_df, early_acc_rois)
+    ref_pattern_df = set_ab_positive(ref_pattern_df, early_acc_rois)
     subs = esm_output['sub_ids']
     visit_labels = esm_output['visit_labels']
     roi_labels = esm_output['roi_labels']
@@ -115,7 +129,7 @@ def main():
     if not os.path.exists(output_dir): 
         os.mkdir(output_dir)
     
-    plot_aggreggate_roi_performance(esm_output, output_dir)
+    plot_aggregate_roi_performance(esm_output, output_dir, ref_pattern)
 
     res = esm.Evaluate_ESM_Results(esm_output_file,
                                    sids=subs,
@@ -129,7 +143,16 @@ def main():
     res['mutation_type'] = get_mutation_type(res.index, genetic_df)
     res['visit_label'] = visit_labels
     res['EYO'] = get_eyo(res.index, res.visit_label, clinical_df)
-    res['AB_Positive'] = esm_output_df['AB_Positive']
+    res['AB_Positive'] = ref_pattern_df['AB_Positive']
+
+    cols_to_evaluate = list(roi_labels)
+    for roi in roi_labels:  
+        if "thalamus" in roi.lower() or "globus pallidus" in roi.lower():
+            cols_to_evaluate.remove(roi)
+    print(len(cols_to_evaluate))
+    r2_ab_positive = stats.pearsonr(ref_pattern_df.loc[:,cols_to_evaluate].mean(0), 
+                                    pred_pattern_df.loc[:, cols_to_evaluate].mean(0))[0] ** 2 
+    print(r2_ab_positive)                               
     
     plot_hist_subject_performance(res, output_dir)
 
