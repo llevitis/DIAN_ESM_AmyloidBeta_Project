@@ -39,7 +39,6 @@ def plot_aggregate_roi_performance(esm_output, output_dir, ref_pattern):
     r2 = r ** 2 
     xmin = np.min(esm_output[ref_pattern].mean(1))
     ymax = np.max(esm_output['model_solutions0'].mean(1))
-    print(ymax)
     plt.text(xmin, ymax, "$r^2$ = {0}".format(np.round(r2, 2), fontsize=16))
     plt.xticks(x=16)
     plt.yticks(y=16)
@@ -48,6 +47,37 @@ def plot_aggregate_roi_performance(esm_output, output_dir, ref_pattern):
     plt.title(r"Average A$\beta$ Pattern Across All MC", fontsize=16)
     output_path = os.path.join(output_dir, "aggreggate_roi_performance_xsec.png")
     plt.tight_layout()
+    plt.savefig(output_path)
+
+def plot_aggregate_roi_performance_across_eyo(ref_pattern_df, pred_pattern_df, roi_labels, output_dir):  
+    #threshold = 0.3
+    age_ranges = [[-20, -10], [-10,0], [0,10], [10,20]] 
+    n_cols = len(age_ranges)
+    fig = plt.figure(figsize=(8,8))
+
+    for idx, ar in enumerate(age_ranges):
+        #loc = 2*(idx+1)-1
+        ref = np.mean(ref_pattern_df[(ref_pattern_df.DIAN_EYO > ar[0]) & (ref_pattern_df.DIAN_EYO < ar[1])][roi_labels], axis=0)
+        pred = np.mean(pred_pattern_df[(pred_pattern_df.DIAN_EYO > ar[0]) & (pred_pattern_df.DIAN_EYO < ar[1])][roi_labels], axis=0)
+        n = ref_pattern_df[(ref_pattern_df.DIAN_EYO > ar[0]) & (ref_pattern_df.DIAN_EYO < ar[1])].shape[0]
+        r,p = stats.pearsonr(ref, pred)
+        r2 = r**2
+        ax1 = plt.subplot(2, 2, idx+1)
+        sns.regplot(ref, pred, color="indianred")
+        plt.xlim([-0.1, 1.1])
+        plt.ylim([-0.1, 1.1])
+        plt.text(s=r"$r^2$ = {0}".format(np.round(r2, 2)), x=0, y=.9, fontsize=18)
+        if idx < 2: 
+            plt.xticks([])
+        else:
+            plt.xticks(fontsize=18)
+        plt.yticks(fontsize=18)
+        plt.title("EYO: {0} to {1} (n = {2})".format(str(ar[0]), str(ar[1]), str(n)), fontsize=18)
+    fig.text(0.2, 0, r"Observed A$\beta$ Probabilities", fontsize=26)
+    fig.text(0.01, 0.2, r"Predicted A$\beta$ Probabilities", fontsize=26, rotation=90)
+    #fig.text(0.2, .95, "Group-level ESM Performance", fontsize=26)
+    output_path = os.path.join(output_dir, "aggreggate_roi_performance_xsec_across_eyo.png")
+    #plt.tight_layout()
     plt.savefig(output_path)
 
 def plot_hist_subject_performance(res, output_dir): 
@@ -123,6 +153,7 @@ def main():
     subs = esm_output['sub_ids']
     visit_labels = esm_output['visit_labels']
     roi_labels = esm_output['roi_labels']
+    
 
     # make a new directory for figs corresponding to a specific output? 
     output_dir = os.path.join("../../figures", results.filename)
@@ -142,19 +173,22 @@ def main():
     
     res['mutation_type'] = get_mutation_type(res.index, genetic_df)
     res['visit_label'] = visit_labels
-    res['EYO'] = get_eyo(res.index, res.visit_label, clinical_df)
+    res['DIAN_EYO'] = get_eyo(res.index, res.visit_label, clinical_df)
+    ref_pattern_df['DIAN_EYO'] = res['DIAN_EYO']
+    pred_pattern_df['DIAN_EYO'] = res['DIAN_EYO']
     res['AB_Positive'] = ref_pattern_df['AB_Positive']
 
     cols_to_evaluate = list(roi_labels)
-    for roi in roi_labels:  
+    for roi in roi_labels:
         if "thalamus" in roi.lower() or "globus pallidus" in roi.lower():
             cols_to_evaluate.remove(roi)
     print(len(cols_to_evaluate))
-    r2_ab_positive = stats.pearsonr(ref_pattern_df.loc[:,cols_to_evaluate].mean(0), 
+    r2_ab_imp_cols = stats.pearsonr(ref_pattern_df.loc[:,cols_to_evaluate].mean(0), 
                                     pred_pattern_df.loc[:, cols_to_evaluate].mean(0))[0] ** 2 
-    print(r2_ab_positive)                               
+    print("performance with excluded subcortical rois: {0}".format(np.round(r2_ab_imp_cols, 3)))                          
     
     plot_hist_subject_performance(res, output_dir)
+    plot_aggregate_roi_performance_across_eyo(ref_pattern_df, pred_pattern_df, roi_labels, output_dir)
 
 if __name__ == "__main__":
     main()
