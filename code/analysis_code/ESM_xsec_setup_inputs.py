@@ -168,10 +168,11 @@ def main():
             epicenters_idx.append(i+1)
     
     # extract df for subjects' first timepoint 
-    ab_prob_t1 = ab_prob_all_visits_df[ab_prob_all_visits_df.visitNumber == 1]
+    ab_prob_t1_mc = ab_prob_all_visits_df[(ab_prob_all_visits_df.visitNumber == 1) & (ab_prob_all_visits_df.Mutation == 1)]
     if scale == True: 
-        ab_prob_t1[roi_cols_to_keep] = sigmoid_normalization(ab_prob_t1[roi_cols_to_keep])
-    ab_prob_t1_mc = ab_prob_t1[ab_prob_t1.Mutation == 1]
+        # to-do: save orig, un-normalized df
+        ab_prob_t1_mc_orig = ab_prob_t1_mc.copy()
+        ab_prob_t1_mc[roi_cols_to_keep] = sigmoid_normalization(ab_prob_t1[roi_cols_to_keep]) 
 
     # prepare inputs for ESM 
     output_dir = '../../data/DIAN/esm_input_mat_files/'
@@ -179,10 +180,16 @@ def main():
     conn_mat_names = ['Map', 'Map']
     conn_out_names = ['ACP', 'LONG']
     file_names = esm_input_file + '.mat'
-    prob_matrices = {'test_data': ab_prob_t1_mc.loc[:, roi_cols]}
     ages = list(ab_prob_t1_mc.loc[:, 'VISITAGEc'])
     sub_ids = list(ab_prob_t1_mc.index)
     visit_labels = list(ab_prob_t1_mc.loc[:, 'visit'])
+
+    # specify whether sigmoid normalized data is used as the test data. always include the un-normalized data.
+
+    if scale == True: 
+        prob_matrices = {'test_data': ab_prob_t1_mc.loc[:, roi_cols], 'orig_data': ab_prob_t1_mc_orig.loc[:, roi_cols]}
+    else: 
+        prob_matrices = {'test_data': ab_prob_t1_mc_orig.loc[:, roi_cols], 'orig_data': ab_prob_t1_mc_orig.loc[:, roi_cols]}
 
     esm.Prepare_Inputs_for_ESM(prob_matrices, 
                                ages, 
