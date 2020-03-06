@@ -80,6 +80,24 @@ def plot_aggregate_roi_performance_across_eyo(ref_pattern_df, pred_pattern_df, r
     #plt.tight_layout()
     plt.savefig(output_path)
 
+def roi_performance_hist(ref_pattern_df, pred_pattern_df, roi_labels, output_dir):
+    roi_r2 = []
+    for roi in roi_labels:
+        r = stats.pearsonr(ref_pattern_df.loc[:, roi], pred_pattern_df.loc[:, roi])[0]
+        roi_r2.append(r**2)
+    roi_r2_df = pd.DataFrame(columns=["ROI", "r2"])
+    roi_r2_df['ROI'] = roi_labels 
+    roi_r2_df['r2'] = roi_r2
+    
+    g = sns.catplot(x='ROI', y='r2',data=roi_r2_df, ci=None, 
+                       order = roi_r2_df.sort_values('r2',ascending=False)['ROI'])
+    g.set_xticklabels(rotation=90)
+    g.fig.set_size_inches((14,6))
+    plt.title('R2 Per ROI Across All Subjects')
+    output_path = os.path.join(output_dir, "roi_performance_hist.png")
+    plt.tight_layout()
+    plt.savefig(output_path)
+
 def plot_hist_subject_performance(res, output_dir): 
     plt.figure(figsize=(5,5))
     g = sns.stripplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", dodge=True)
@@ -119,6 +137,15 @@ def get_eyo(subs, visit_labels, clinical_df):
         eyos.append(eyo)
     return eyos
 
+def get_pup_cortical_analysis_cols(roi_labels): 
+    pup_cortical_rois = [] 
+    for i, roi in enumerate(roi_labels): 
+        if "precuneus" in roi.lower() or "superior frontal" in roi.lower() \
+            or "rostral middle frontal" in roi.lower() or "lateral orbitofrontal" in roi.lower() \
+            or "medial orbitofrontal" in roi.lower() or "superior temporal" in roi.lower() \
+            or "middle temporal" in roi.lower() or "posterior cingulate" in roi.lower(): 
+            pup_cortical_rois.append(roi)
+
 def main(): 
     parser = ArgumentParser()
     parser.add_argument("filename",
@@ -153,6 +180,7 @@ def main():
     subs = esm_output['sub_ids']
     visit_labels = esm_output['visit_labels']
     roi_labels = esm_output['roi_labels']
+    pup_cortical_rois = get_pup_cortical_analysis_cols(roi_labels)
     
 
     # make a new directory for figs corresponding to a specific output? 
@@ -189,6 +217,7 @@ def main():
     
     plot_hist_subject_performance(res, output_dir)
     plot_aggregate_roi_performance_across_eyo(ref_pattern_df, pred_pattern_df, roi_labels, output_dir)
+    roi_performance_hist(ref_pattern_df, pred_pattern_df, roi_labels, output_dir)
 
 if __name__ == "__main__":
     main()
