@@ -32,14 +32,19 @@ from sklearn.linear_model import LinearRegression
 from nilearn import input_data, image
 
 ## look at mutation differences
-def plot_aggregate_roi_performance(esm_output, output_dir, ref_pattern): 
+
+def plot_aggregate_roi_performance(ref_pattern_df, pred_pattern_df, roi_labels, output_dir): 
     plt.figure(figsize=(5,5))
-    sns.regplot(esm_output[ref_pattern].mean(1), esm_output['model_solutions0'].mean(1), color="indianred")
-    r,p = stats.pearsonr(esm_output[ref_pattern].mean(1), esm_output['model_solutions0'].mean(1))
+    ref_roi_avg = np.mean(ref_pattern_df.loc[:, roi_labels], axis=0)
+    pred_roi_avg = np.mean(pred_pattern_df.loc[:, roi_labels], axis=0)
+    sns.regplot(ref_roi_avg, pred_roi_avg, color="indianred")
+    r,p = stats.pearsonr(ref_roi_avg, pred_roi_avg)
     r2 = r ** 2 
-    xmin = np.min(esm_output[ref_pattern].mean(1))
-    ymax = np.max(esm_output['model_solutions0'].mean(1))
+    xmin = np.min(ref_roi_avg)
+    ymax = np.max(pred_roi_avg)
     plt.text(xmin, ymax, "$r^2$ = {0}".format(np.round(r2, 2), fontsize=16))
+    plt.xlim([-0.01,ymax+.1])
+    plt.ylim([-0.01,ymax+.1])
     plt.xticks(x=16)
     plt.yticks(y=16)
     plt.xlabel(r"Observed A$\beta$ Probabilities", fontsize=16)
@@ -90,7 +95,8 @@ def roi_performance_hist(ref_pattern_df, pred_pattern_df, roi_labels, output_dir
     roi_r2_df['r2'] = roi_r2
     
     g = sns.catplot(x='ROI', y='r2',data=roi_r2_df, ci=None, 
-                       order = roi_r2_df.sort_values('r2',ascending=False)['ROI'])
+                       order = roi_r2_df.sort_values('r2',ascending=False)['ROI'],
+                       kind='bar')
     g.set_xticklabels(rotation=90)
     g.fig.set_size_inches((14,6))
     plt.title('R2 Per ROI Across All Subjects')
@@ -100,7 +106,8 @@ def roi_performance_hist(ref_pattern_df, pred_pattern_df, roi_labels, output_dir
 
 def plot_hist_subject_performance(res, output_dir): 
     plt.figure(figsize=(5,5))
-    g = sns.stripplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", dodge=True)
+    g = sns.boxplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", dodge=True)
+    sns.stripplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", dodge=True, ax=g, color="black")
     g.set(xticklabels=["PSEN1", "PSEN2", "APP"])
     plt.xlabel("Mutation Type")
     plt.ylabel("Within subject r2")
@@ -150,6 +157,8 @@ def main():
     parser = ArgumentParser()
     parser.add_argument("filename",
                         help="Please pass base filename of ESM output file to analyze")
+    parser.add_argument("dataset", 
+                        help="Please specify whether the analysis is being done for DIAN or ADNI.")
     parser.add_argument("--scale", 
                         type=bool, 
                         default=False, 
@@ -157,14 +166,12 @@ def main():
 
     results = parser.parse_args()
     scale = results.scale
+    dataset = results.dataset
 
     if scale == True: 
         ref_pattern = "ref_pattern_orig"
     else: 
         ref_pattern = "ref_pattern"
-
-    genetic_df = pd.read_csv("../../data/DIAN/participant_metadata/GENETIC_D1801.csv")
-    clinical_df = pd.read_csv("../../data/DIAN/participant_metadata/CLINICAL_D1801.csv")
 
     esm_output_file = "../../data/DIAN/esm_output_mat_files/" + results.filename + ".mat"
     esm_output = esm.loadmat(esm_output_file)
@@ -181,14 +188,12 @@ def main():
     visit_labels = esm_output['visit_labels']
     roi_labels = esm_output['roi_labels']
     pup_cortical_rois = get_pup_cortical_analysis_cols(roi_labels)
-    
+    print(len(roi_labels))
 
     # make a new directory for figs corresponding to a specific output? 
     output_dir = os.path.join("../../figures", results.filename)
     if not os.path.exists(output_dir): 
         os.mkdir(output_dir)
-    
-    plot_aggregate_roi_performance(esm_output, output_dir, ref_pattern)
 
     res = esm.Evaluate_ESM_Results(esm_output_file,
                                    sids=subs,
@@ -199,25 +204,43 @@ def main():
     for i, sub in enumerate(res.index): 
         res.loc[sub, 'esm_idx'] = i 
     
-    res['mutation_type'] = get_mutation_type(res.index, genetic_df)
     res['visit_label'] = visit_labels
-    res['DIAN_EYO'] = get_eyo(res.index, res.visit_label, clinical_df)
-    ref_pattern_df['DIAN_EYO'] = res['DIAN_EYO']
-    pred_pattern_df['DIAN_EYO'] = res['DIAN_EYO']
     res['AB_Positive'] = ref_pattern_df['AB_Positive']
 
+    if dataset == "DIAN":
+        genetic_df = pd.read_csv("../../data/DIAN/participant_metadata/GENETIC_D1801.csv")
+        clinical_df = pd.read_csv("../../data/DIAN/participant_metadata/CLINICAL_D1801.csv")
+        res['mutation_type'] = get_mutation_type(res.index, genetic_df)
+        res['DIAN_EYO'] = get_eyo(res.index, res.visit_label, clinical_df)
+        ref_pattern_df['DIAN_EYO'] = res['DIAN_EYO']
+        pred_pattern_df['DIAN_EYO'] = res['DIAN_EYO']
+
     cols_to_evaluate = list(roi_labels)
+    cols_to_remove = ["thalamus", "globus pallidus"]
     for roi in roi_labels:
-        if "thalamus" in roi.lower() or "globus pallidus" in roi.lower():
-            cols_to_evaluate.remove(roi)
-    print(len(cols_to_evaluate))
+        for roi2 in cols_to_remove: 
+            if roi2 in roi.lower():
+                cols_to_evaluate.remove(roi)
     r2_ab_imp_cols = stats.pearsonr(ref_pattern_df.loc[:,cols_to_evaluate].mean(0), 
                                     pred_pattern_df.loc[:, cols_to_evaluate].mean(0))[0] ** 2 
-    print("performance with excluded subcortical rois: {0}".format(np.round(r2_ab_imp_cols, 3)))                          
+    print("performance with excluded subcortical rois: {0}".format(np.round(r2_ab_imp_cols, 3)))   
+
+    r2_sub = np.mean(res[res.AB_Positive == True].model_r2)
+    print("ab pos sub level performance avg: {0}".format(r2_sub))                     
     
-    plot_hist_subject_performance(res, output_dir)
-    plot_aggregate_roi_performance_across_eyo(ref_pattern_df, pred_pattern_df, roi_labels, output_dir)
+    plot_aggregate_roi_performance(ref_pattern_df, 
+                                   pred_pattern_df, 
+                                   roi_labels, 
+                                   output_dir)
+
     roi_performance_hist(ref_pattern_df, pred_pattern_df, roi_labels, output_dir)
+    
+    if dataset == "DIAN":
+        plot_aggregate_roi_performance_across_eyo(ref_pattern_df, 
+                                                  pred_pattern_df, 
+                                                  roi_labels, 
+                                                  output_dir)
+        plot_hist_subject_performance(res, output_dir)
 
 if __name__ == "__main__":
     main()
