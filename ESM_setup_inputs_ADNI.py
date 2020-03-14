@@ -11,13 +11,10 @@ import pandas as pd
 import numpy as np
 import math 
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 sys.path.insert(0,'..')
 import ESM_utils as esm
 from scipy.optimize import curve_fit
-from sklearn.preprocessing import MinMaxScaler
-
 
 def intersection(lst1, lst2): 
   
@@ -57,24 +54,6 @@ def exclude_subcortical_rois(df, roi_cols_to_exclude):
     df[roi_cols_to_exclude] = 0
     return df
 
-def stripplot_subcortical_mc_nc(ab_prob_df): 
-    plt.figure(figsize=(10,10))
-    nrows = 2
-    ncols = 2 
-    subcortical_rois = ["Left Thalamus", "Left Caudate", "Left Putamen", "Left Globus Pallidus"]
-    for i, roi in enumerate(subcortical_rois):  
-        j = i + 1 
-        plt.subplot(nrows, ncols, j)
-        sns.stripplot(x="Mutation", y=roi, data=ab_prob_df, size=3)
-        plt.title(roi, fontsize=12) 
-        plt.ylabel("") 
-        #plt.xticks(["Noncarrier", "Mutation Carrier"])
-    plt.tight_layout()
-    plt.savefig(os.path.join("../../figures", "mc_nc_roi_stripplot.png"))
-    plt.close()
-
-
-
 def sort_df(ab_prob_df):  
     # sort subjects
     ind_sorter = pd.DataFrame(ab_prob_df,copy=True)
@@ -94,21 +73,6 @@ def fsigmoid(x, a, b):
     # Define sigmoid function
     return 1.0 / (1.0 + np.exp(-a*(x-b)))
 
-def zscore_mc_nc(ab_prob_df_mc, ab_prob_df_nc, roi_cols): 
-    ab_prob_df_mc_zscore = ab_prob_df_mc.copy() 
-    for roi in roi_cols: 
-        mc_roi_vals = ab_prob_df_mc.loc[:, roi] 
-        nc_roi_vals = ab_prob_df_nc.loc[:, roi]  
-        mc_roi_vals_zscore = (mc_roi_vals-nc_roi_vals.mean())/nc_roi_vals.std()  
-        ab_prob_df_mc_zscore.loc[:, roi] = np.absolute(mc_roi_vals_zscore) 
-    scaler = MinMaxScaler()
-    ab_prob_df_mc_zscore_copy = ab_prob_df_mc_zscore[roi_cols].copy()
-    ab_prob_df_mc_zscore_copy[ab_prob_df_mc_zscore_copy < 1.98] = 0 
-
-    esm.Plot_Probabilites(ab_prob_df_mc_zscore_copy[roi_cols])
-    plt.show()
-    ab_prob_df_mc_zscore[roi_cols] = scaler.fit_transform(ab_prob_df_mc_zscore[roi_cols])
-    return ab_prob_df_mc_zscore
 
 def sigmoid_normalization(ab_prob_df): 
     '''
@@ -140,8 +104,8 @@ def sigmoid_normalization(ab_prob_df):
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument("--ab_prob_matrix_dir",
-                        help="Please pass the files directory containing the PiB-PET probability matrices")
+    parser.add_argument("--ab_prob_matrix_file",
+                        help="Please pass the files containing the ADNI PiB-PET probability matrix")
     parser.add_argument("--esm_input_file",
                         help="Please provide desired ESM input filename.")
     parser.add_argument("--connectivity_type",
@@ -158,7 +122,7 @@ def main():
                         default=None)
     results = parser.parse_args()
 
-    ab_prob_matrix_dir = results.ab_prob_matrix_dir
+    ab_prob_matrix_file = results.ab_prob_matrix_file
     esm_input_file = results.esm_input_file
     connectivity_type = results.connectivity_type
     epicenters_for_esm = results.epicenters_for_esm
@@ -167,34 +131,11 @@ def main():
     if scale == True: 
         esm_input_file = esm_input_file + "_scaled"
 
-    file_paths = sorted(glob.glob(ab_prob_matrix_dir))
-
-    pib_df = pd.read_csv("../../data/DIAN/participant_metadata/pib_D1801.csv")
-    genetic_df = pd.read_csv("../../data/DIAN/participant_metadata/GENETIC_D1801.csv")
-    clinical_df = pd.read_csv("../../data/DIAN/participant_metadata/CLINICAL_D1801.csv")
-
-    ab_prob_df_list = []
-    for i, fp in enumerate(file_paths): 
-        ab_curr_prob_df = pd.read_csv(file_paths[i], index_col=0)
-        visit = file_paths[i].split(".")[-2].split("_")[-1]
-        ab_curr_prob_df.loc[:, 'visit'] = visit
-        #drop participants that did not pass QC according to PUP's PET processing
-        for sub in ab_curr_prob_df.index: 
-            if not ((pib_df['IMAGID'] == sub) & (pib_df['visit'] == visit)).any(): 
-                ab_curr_prob_df = ab_curr_prob_df[ab_curr_prob_df.index != sub]
-        ab_prob_df_list.append(ab_curr_prob_df)
+    ab_prob_df = pd.read_csv(ab_prob_matrix_file, index_col=0)  
     
-    #concatenate all dataframes
-    ab_prob_all_visits_df = pd.concat(ab_prob_df_list) 
-    #add metadata to the dataframe 
-    ab_prob_all_visits_df = add_metadata_to_amyloid_df(ab_prob_all_visits_df,
-                                                       genetic_df, 
-                                                       clinical_df)    
-    
-
     # get column names corresponding to ROIs
-    roi_cols = ab_prob_all_visits_df.columns[0:78]
-    roi_cols_to_keep = [y for y in roi_cols if not all([x==0 for x in ab_prob_all_visits_df[y]])]
+    roi_cols = ab_prob_df.columns[0:78]
+    roi_cols_to_keep = [y for y in roi_cols if not all([x==0 for x in ab_prob_df[y]])]
 
     # get MATLAB compatible indices of ROIs to use as epicenters
     epicenters_idx = []
@@ -202,42 +143,27 @@ def main():
         if roi.lower() in epicenters_for_esm:  
             print(roi)
             epicenters_idx.append(i+1)
-
-    stripplot_subcortical_mc_nc(ab_prob_all_visits_df)
     
-    # extract df for subjects' first timepoint for both mutation carriers and noncarriers  
-    # For each region, create a null distribution from noncarriers' signal 
-    # Calculate a z-score for each subject (with regards the non-carrier distribution) 
-    # Take the absolute value of this z-score 
-    # Normalize to 0-1
-    ab_prob_t1_mc = ab_prob_all_visits_df[(ab_prob_all_visits_df.visitNumber == 1) & (ab_prob_all_visits_df.Mutation == 1)]
-    ab_prob_t1_nc = ab_prob_all_visits_df[(ab_prob_all_visits_df.visitNumber == 1) & (ab_prob_all_visits_df.Mutation == 0)]
-
-    ab_prob_t1_mc_zscore = ab_prob_t1_mc.copy()
-    ab_prob_t1_mc_zscore = zscore_mc_nc(ab_prob_t1_mc, ab_prob_t1_nc, roi_cols_to_keep)
-
-    #esm.Plot_Probabilites(ab_prob_t1_mc_zscore[roi_cols])
-
-    ab_prob_t1_mc_zscore_sigmoid = ab_prob_t1_mc_zscore.copy()
     if scale == True: 
-        ab_prob_t1_mc_zscore_sigmoid[roi_cols_to_keep] = sigmoid_normalization(ab_prob_t1_mc_zscore[roi_cols_to_keep]) 
+        # to-do: save orig, un-normalized df
+        ab_prob_df_orig = ab_prob_df.copy()
+        ab_prob_df[roi_cols_to_keep] = sigmoid_normalization(ab_prob_df[roi_cols_to_keep]) 
 
     # prepare inputs for ESM 
-    output_dir = '../../data/DIAN/esm_input_mat_files/'
+    output_dir = '../../data/ADNI/esm_input_mat_files/'
     conn_matrices = ['../../data/DIAN/connectivity_matrices/Matrix_ACP.mat', '../../data/DIAN/connectivity_matrices/Matrix_LONG.mat']
     conn_mat_names = ['Map', 'Map']
     conn_out_names = ['ACP', 'LONG']
     file_names = esm_input_file + '.mat'
-    ages = list(ab_prob_t1_mc.loc[:, 'VISITAGEc'])
-    sub_ids = list(ab_prob_t1_mc.index)
-    visit_labels = list(ab_prob_t1_mc.loc[:, 'visit'])
+    ages = list(ab_prob_df.loc[:, 'Age'])
+    sub_ids = list(ab_prob_df.index)
 
     # specify whether sigmoid normalized data is used as the test data. always include the un-normalized data.
 
     if scale == True: 
-        prob_matrices = {'test_data': ab_prob_t1_mc_zscore_sigmoid.loc[:, roi_cols], 'orig_data': ab_prob_t1_mc_zscore.loc[:, roi_cols]}
+        prob_matrices = {'test_data': ab_prob_df.loc[:, roi_cols], 'orig_data': ab_prob_df_orig.loc[:, roi_cols]}
     else: 
-        prob_matrices = {'test_data': ab_prob_t1_mc_zscore.loc[:, roi_cols], 'orig_data': ab_prob_t1_mc_zscore.loc[:, roi_cols]}
+        prob_matrices = {'test_data': ab_prob_df_orig.loc[:, roi_cols], 'orig_data': ab_prob_df_orig.loc[:, roi_cols]}
 
     esm.Prepare_Inputs_for_ESM(prob_matrices, 
                                ages, 
@@ -248,7 +174,6 @@ def main():
                                conn_out_names,
                                epicenters_idx,
                                sub_ids, 
-                               visit_labels,
                                roi_cols_to_keep,
                                figure=False)
 

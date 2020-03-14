@@ -27,9 +27,6 @@ import ESM_utils as esm
 from scipy import stats
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
-from sklearn.decomposition import PCA
-from sklearn.linear_model import LinearRegression
-from nilearn import input_data, image
 
 ## look at mutation differences
 
@@ -104,7 +101,7 @@ def roi_performance_hist(ref_pattern_df, pred_pattern_df, roi_labels, output_dir
     plt.tight_layout()
     plt.savefig(output_path)
 
-def plot_hist_subject_performance(res, output_dir): 
+def plot_subject_performance(res, output_dir, dataset): 
     plt.figure(figsize=(5,5))
     g = sns.boxplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", dodge=True)
     sns.stripplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", dodge=True, ax=g, color="black")
@@ -116,15 +113,11 @@ def plot_hist_subject_performance(res, output_dir):
     plt.tight_layout()
     plt.savefig(output_path)
 
-def set_ab_positive(ref_pattern_df, early_acc_rois):
-    cols_to_analyze = [] 
-    for col in ref_pattern_df.columns: 
-        for roi in early_acc_rois: 
-            if roi in col.lower(): 
-                cols_to_analyze.append(col)
+def set_ab_positive(ref_pattern_df, rois_to_analyze):
     for sub in ref_pattern_df.index:
-        avg_ab_val = np.mean(list(ref_pattern_df.loc[sub, cols_to_analyze]))
-        if avg_ab_val > 0.2: 
+        avg_ab_val = np.mean(list(ref_pattern_df.loc[sub, rois_to_analyze]))
+        ref_pattern_df.loc[sub, 'PUP_ROI_AB_Mean'] = avg_ab_val
+        if avg_ab_val > 0.1: 
             ref_pattern_df.loc[sub, 'AB_Positive'] = True
         else: 
             ref_pattern_df.loc[sub, 'AB_Positive'] = False
@@ -150,8 +143,9 @@ def get_pup_cortical_analysis_cols(roi_labels):
         if "precuneus" in roi.lower() or "superior frontal" in roi.lower() \
             or "rostral middle frontal" in roi.lower() or "lateral orbitofrontal" in roi.lower() \
             or "medial orbitofrontal" in roi.lower() or "superior temporal" in roi.lower() \
-            or "middle temporal" in roi.lower() or "posterior cingulate" in roi.lower(): 
+            or "middle temporal" in roi.lower(): 
             pup_cortical_rois.append(roi)
+    return pup_cortical_rois
 
 def main(): 
     parser = ArgumentParser()
@@ -183,12 +177,11 @@ def main():
                                  columns=esm_output['roi_labels'], 
                                  data=esm_output['model_solutions0'].transpose())
     early_acc_rois = ["precuneus", "medial orbitofrontal", "posterior cingulate", "caudate", "putamen"] 
-    ref_pattern_df = set_ab_positive(ref_pattern_df, early_acc_rois)
     subs = esm_output['sub_ids']
     visit_labels = esm_output['visit_labels']
     roi_labels = esm_output['roi_labels']
     pup_cortical_rois = get_pup_cortical_analysis_cols(roi_labels)
-    print(len(roi_labels))
+    ref_pattern_df = set_ab_positive(ref_pattern_df, pup_cortical_rois)
 
     # make a new directory for figs corresponding to a specific output? 
     output_dir = os.path.join("../../figures", results.filename)
@@ -214,6 +207,8 @@ def main():
         res['DIAN_EYO'] = get_eyo(res.index, res.visit_label, clinical_df)
         ref_pattern_df['DIAN_EYO'] = res['DIAN_EYO']
         pred_pattern_df['DIAN_EYO'] = res['DIAN_EYO']
+    if dataset == "ADNI": 
+        clinical_mat = pd.read_csv("../../")
 
     cols_to_evaluate = list(roi_labels)
     cols_to_remove = ["thalamus", "globus pallidus"]
@@ -240,7 +235,7 @@ def main():
                                                   pred_pattern_df, 
                                                   roi_labels, 
                                                   output_dir)
-        plot_hist_subject_performance(res, output_dir)
+        plot_subject_performance(res, output_dir, dataset)
 
 if __name__ == "__main__":
     main()
