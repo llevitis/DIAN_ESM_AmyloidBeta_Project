@@ -20,6 +20,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import math
 from statannot import add_stat_annotation
+import bct
 
 sys.path.insert(0,'..')
 import ESM_utils as esm
@@ -147,6 +148,72 @@ def get_pup_cortical_analysis_cols(roi_labels):
             pup_cortical_rois.append(roi)
     return pup_cortical_rois
 
+def get_clinical_status(res, clinical_df): 
+    for sub in res.index: 
+        visit = res.loc[sub, 'visit_label']
+        cdr = clinical_df[(clinical_df.IMAGID == sub) & (clinical_df.visit == visit)].cdrglob.values[0]
+        if cdr > 0:  
+            res.loc[sub, 'Symptomatic'] = True 
+        else: 
+            res.loc[sub, 'Symptomatic'] = False
+        res.loc[sub, 'CDR'] = cdr
+    return res
+
+def plot_effective_anat_dist_vs_ab(ref_pattern_df, acp_matrix, epicenters_idx, roi_labels, output_dir):
+    # set diagonal to 1 
+    for i in range(0, len(acp_matrix)): 
+        acp_matrix[i][i] = 1
+    acp_matrix_reciprocal = np.reciprocal(acp_matrix)
+    acp_effective_dist = bct.distance_wei(acp_matrix_reciprocal)
+    roi_cols_not_seed = []
+    effective_anat_distance_dict = {}
+    for i, roi in enumerate(roi_labels):
+        dist = 0 
+        for j in epicenters_idx: 
+            dist += acp_effective_dist[0][i, j]
+        dist = dist / len(epicenters_idx)
+        #print("{0}: {1}".format(roi, str(np.round(dist,3))))
+        effective_anat_distance_dict[roi] = dist 
+    roi_dist_ab_df = pd.DataFrame(columns=["Avg_Deposition_Asymptomatic", 
+                                           "Avg_Deposition_Symptomatic", 
+                                           "Effective_Anat_Distance"], 
+                                  index=roi_labels, 
+                                  dtype="float")
+    for i,roi in enumerate(roi_labels): 
+        roi_dist_ab_df.loc[roi, "Effective_Anat_Distance"] = effective_anat_distance_dict[roi]
+        roi_dist_ab_df.loc[roi, "Avg_Deposition_Asymptomatic"] = np.mean(ref_pattern_df[ref_pattern_df.Symptomatic == False].loc[:, roi])
+        roi_dist_ab_df.loc[roi, "Avg_Deposition_Symptomatic"] = np.mean(ref_pattern_df[ref_pattern_df.Symptomatic == True].loc[:, roi])
+    
+    fig, (ax1, ax2) = plt.subplots(ncols=2, sharey=False, sharex=False, figsize=(6,3))
+    axes = [ax1, ax2]
+    for i, status in enumerate(["Avg_Deposition_Asymptomatic", "Avg_Deposition_Symptomatic"]): 
+        axes[i] = sns.regplot(x="Effective_Anat_Distance", y=status, data=roi_dist_ab_df.loc[roi_labels,:], ax=axes[i])
+
+        r, p = stats.pearsonr(roi_dist_ab_df.loc[roi_labels, "Effective_Anat_Distance"],
+                              roi_dist_ab_df.loc[roi_labels, status])
+        title = status.split("_")[-1]
+        axes[i].set_xlabel("Effective Anatomical Distance", fontsize=10, axes=axes[i])
+        axes[i].set_ylabel(r"Regional A$\beta$ Probability", fontsize=10, axes=axes[i])
+        axes[i].set_title(title, fontsize=10)
+        axes[i].set_ylim([-0.1,1])
+        axes[i].text(x=1.5, y=0.8, s="r: {0}\np < 0.01".format(str(np.round(r,3))))
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "effective_anat_dist_vs_ab.png"))
+
+def plot_clinical_status_vs_esm_params(res, output_dir):
+    plt.figure(figsize=(10,10))
+    nrows = 2
+    ncols = 2
+    params = ["BETAS_est", "DELTAS_est", "BDR_log", "PUP_ROI_AB_Mean"]
+    titles = ["Production rate", "Clearance rate", "Prod/Clear rate", "Amyloid Beta"]
+    for i, param in enumerate(params):  
+        j = i + 1 
+        plt.subplot(nrows, ncols, j)
+        sns.boxplot(x="Symptomatic", y=param, data=res[res.AB_Positive == True])
+        plt.title(titles[i], fontsize=12) 
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "clinical_status_vs_esm_params.png"))
+
 def main(): 
     parser = ArgumentParser()
     parser.add_argument("filename",
@@ -177,9 +244,13 @@ def main():
                                  columns=esm_output['roi_labels'], 
                                  data=esm_output['model_solutions0'].transpose())
     early_acc_rois = ["precuneus", "medial orbitofrontal", "posterior cingulate", "caudate", "putamen"] 
+    acp_matrix = esm_output['Conn_Matrix']
     subs = esm_output['sub_ids']
     visit_labels = esm_output['visit_labels']
     roi_labels = esm_output['roi_labels']
+    # change to python indexing 
+    epicenters_idx = [x-1 for x in list(esm_output['seed_regions_1'][0])]
+    print(epicenters_idx)
     pup_cortical_rois = get_pup_cortical_analysis_cols(roi_labels)
     ref_pattern_df = set_ab_positive(ref_pattern_df, pup_cortical_rois)
 
@@ -195,10 +266,14 @@ def main():
                                    plot=False)
 
     for i, sub in enumerate(res.index): 
-        res.loc[sub, 'esm_idx'] = i 
-    
+        res.loc[sub, 'esm_idx'] = i
+
     res['visit_label'] = visit_labels
+    res['BETAS_est'] = [x[0] for x in esm_output['BETAS_est']]
+    res['DELTAS_est'] = [x[0] for x in esm_output['DELTAS_est']]
+    res['BDR_log'] = np.log(res['BETAS_est']/res['DELTAS_est'])
     res['AB_Positive'] = ref_pattern_df['AB_Positive']
+    res['PUP_ROI_AB_Mean'] = ref_pattern_df['PUP_ROI_AB_Mean']
 
     if dataset == "DIAN":
         genetic_df = pd.read_csv("../../data/DIAN/participant_metadata/GENETIC_D1801.csv")
@@ -206,9 +281,13 @@ def main():
         res['mutation_type'] = get_mutation_type(res.index, genetic_df)
         res['DIAN_EYO'] = get_eyo(res.index, res.visit_label, clinical_df)
         ref_pattern_df['DIAN_EYO'] = res['DIAN_EYO']
-        pred_pattern_df['DIAN_EYO'] = res['DIAN_EYO']
+        pred_pattern_df['DIAN_EYO'] = res['DIAN_EYO'] 
+        res = get_clinical_status(res, clinical_df)
+        ref_pattern_df.loc[:, 'Symptomatic'] = res.loc[:, 'Symptomatic']
+        plot_clinical_status_vs_esm_params(res, output_dir)
+        plot_effective_anat_dist_vs_ab(ref_pattern_df, acp_matrix, epicenters_idx, roi_labels, output_dir)
     if dataset == "ADNI": 
-        clinical_mat = pd.read_csv("../../")
+        clinical_mat = pd.read_csv("../../") 
 
     cols_to_evaluate = list(roi_labels)
     cols_to_remove = ["thalamus", "globus pallidus"]
