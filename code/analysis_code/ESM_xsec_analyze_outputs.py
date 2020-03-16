@@ -165,7 +165,7 @@ def plot_effective_anat_dist_vs_ab(ref_pattern_df, acp_matrix, epicenters_idx, r
         acp_matrix[i][i] = 1
     acp_matrix_reciprocal = np.reciprocal(acp_matrix)
     acp_effective_dist = bct.distance_wei(acp_matrix_reciprocal)
-    roi_cols_not_seed = []
+    roi_labels_not_seed = []
     effective_anat_distance_dict = {}
     for i, roi in enumerate(roi_labels):
         dist = 0 
@@ -213,6 +213,35 @@ def plot_clinical_status_vs_esm_params(res, output_dir):
         plt.title(titles[i], fontsize=12) 
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "clinical_status_vs_esm_params.png"))
+
+def plot_ref_vs_pred_group_brain(ref_pattern_df, pred_pattern_df, roi_labels, output_dir): 
+    dkt_atlas = nib.load("../../data/atlases/dkt_atlas_1mm.nii.gz")
+    dkt_data = dkt_atlas.get_data()
+    age_ranges = [[-20, -10], [-10,0], [0,10], [10,20]] 
+    img_slice = [-2, 2, 24]
+    n_rows = len(age_ranges)
+    fig = plt.figure(figsize=(20,20))
+    threshold = 0.1
+    for idx, ar in enumerate(age_ranges):
+        loc = 2*(idx+1)-1
+
+        curr_ref_probs = np.zeros_like(dkt_data)
+        curr_pred_probs = np.zeros_like(dkt_data)
+        for i in range(0, len(roi_labels)): 
+            n = len(ref_pattern_df[(ref_pattern_df.DIAN_EYO > ar[0]) & (ref_pattern_df.DIAN_EYO < ar[1])][roi_labels[i]])
+            curr_ref_probs[dkt_data==(i+1)] = np.mean(ref_pattern_df[(ref_pattern_df.DIAN_EYO > ar[0]) & (ref_pattern_df.DIAN_EYO < ar[1])][roi_labels[i]])
+            curr_pred_probs[dkt_data==(i+1)] = np.mean(pred_pattern_df[(pred_pattern_df.DIAN_EYO > ar[0]) & (pred_pattern_df.DIAN_EYO < ar[1])][roi_labels[i]])
+        curr_ref_probs_img = nib.Nifti1Image(curr_ref_probs, affine=dkt_atlas.affine, header=dkt_atlas.header)
+        curr_pred_probs_img = nib.Nifti1Image(curr_pred_probs, affine=dkt_atlas.affine, header=dkt_atlas.header)
+
+        ax1 = plt.subplot(n_rows, 2, loc)
+        plotting.plot_stat_map(curr_ref_probs_img, colorbar=True, draw_cross=False, vmax=1, cut_coords=img_slice, axes=ax1, threshold=threshold, cmap="Spectral_r")
+        plt.title("EYO: {0} to {1} (n = {2})".format(str(ar[0]), str(ar[1]), str(n)), fontsize=36)
+        ax2 = plt.subplot(n_rows, 2, loc+1)
+        plotting.plot_stat_map(curr_pred_probs_img, colorbar=True, draw_cross=False, vmax=1, cut_coords=img_slice, axes=ax2, threshold=threshold, cmap="Spectral_r")
+    fig.text(x=0.25, y=0.9,s="Observed", fontsize=36)
+    fig.text(x=0.65, y=0.9,s="Predicted", fontsize=36)
+    plt.savefig(os.path.join(output_dir, "ref_vs_pred_group_brain.png"))
 
 def main(): 
     parser = ArgumentParser()
@@ -286,6 +315,7 @@ def main():
         ref_pattern_df.loc[:, 'Symptomatic'] = res.loc[:, 'Symptomatic']
         plot_clinical_status_vs_esm_params(res, output_dir)
         plot_effective_anat_dist_vs_ab(ref_pattern_df, acp_matrix, epicenters_idx, roi_labels, output_dir)
+        plot_ref_vs_pred_group_brain(ref_pattern_df, pred_pattern_df, roi_labels, output_dir)
     if dataset == "ADNI": 
         clinical_mat = pd.read_csv("../../") 
 
