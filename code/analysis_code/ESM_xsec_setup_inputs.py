@@ -102,11 +102,6 @@ def zscore_mc_nc(ab_prob_df_mc, ab_prob_df_nc, roi_cols):
         mc_roi_vals_zscore = (mc_roi_vals-nc_roi_vals.mean())/nc_roi_vals.std()  
         ab_prob_df_mc_zscore.loc[:, roi] = np.absolute(mc_roi_vals_zscore) 
     scaler = MinMaxScaler()
-    ab_prob_df_mc_zscore_copy = ab_prob_df_mc_zscore[roi_cols].copy()
-    ab_prob_df_mc_zscore_copy[ab_prob_df_mc_zscore_copy < 1.98] = 0 
-
-    esm.Plot_Probabilites(ab_prob_df_mc_zscore_copy[roi_cols])
-    plt.show()
     ab_prob_df_mc_zscore[roi_cols] = scaler.fit_transform(ab_prob_df_mc_zscore[roi_cols])
     return ab_prob_df_mc_zscore
 
