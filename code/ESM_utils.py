@@ -926,6 +926,13 @@ def Prepare_Inputs_for_ESM(prob_matrices, ages, output_dir, file_name,
     
     if type(visit_labels) == list: 
         prob_matrices.update({'visit_labels': visit_labels})
+    elif type(visit_labels) == dict: 
+        for key, visit_list in visit_labels.items(): 
+            visit_list = pandas.Series(visit_list) 
+            if len(visit_list.dropna()) != len(df):
+                raise ValueError('length mismatch between "visits" and prob_matrices. Does "visits" have NaNs?')
+            prob_matrices.update({key: visit_list.values})
+
 
     if type(epicenters_idx) == list:  
         prob_matrices.update({'epicenters_idx': epicenters_idx})
