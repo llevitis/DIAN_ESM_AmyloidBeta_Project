@@ -17,14 +17,7 @@ sys.path.insert(0,'..')
 import ESM_utils as esm
 from scipy.optimize import curve_fit
 from sklearn.preprocessing import MinMaxScaler
-
-
-def intersection(lst1, lst2): 
-  
-    # Use of hybrid method 
-    temp = set(lst2) 
-    lst3 = [value for value in lst1 if value in temp] 
-    return lst3 
+ 
 
 def add_metadata_to_amyloid_df(df, genetic_df, clinical_df):
     for sub in df.index: 
