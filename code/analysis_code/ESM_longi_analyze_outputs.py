@@ -134,7 +134,7 @@ def main():
     genetic_df = pd.read_csv("../../data/DIAN/participant_metadata/GENETIC_D1801.csv")
     clinical_df = pd.read_csv("../../data/DIAN/participant_metadata/CLINICAL_D1801.csv")
     
-    esm_output_file = "../../data/DIAN/esm_output_mat_files/" + results.filename + ".mat"
+    esm_output_file = "../../data/DIAN/esm_output_mat_files/longi/" + results.filename + ".mat"
     esm_output = esm.loadmat(esm_output_file)
     output_dir = os.path.join("../../figures", results.filename)
     if not os.path.exists(output_dir): 

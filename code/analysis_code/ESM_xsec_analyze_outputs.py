@@ -104,13 +104,23 @@ def roi_performance_hist(ref_pattern_df, pred_pattern_df, roi_labels, output_dir
 
 def plot_subject_performance(res, output_dir, dataset): 
     plt.figure(figsize=(5,5))
-    g = sns.boxplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", dodge=True)
-    sns.stripplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", dodge=True, ax=g, color="black")
+    pal = {True: "mediumblue", False: "red"}
+    face_pal = {True: "cornflowerblue", False: "indianred"}
+    g = sns.boxplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", palette=face_pal, fliersize=0)
+    sns.stripplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", jitter=True, 
+                  split=True, linewidth=0.5, palette=pal)
     g.set(xticklabels=["PSEN1", "PSEN2", "APP"])
     plt.xlabel("Mutation Type")
     plt.ylabel("Within subject r2")
     plt.title("ESM X-Sec Performance Across Mutation Types")
     output_path = os.path.join(output_dir, "within_subject_xsec_perform_across_muttypes.png")
+    # Get the handles and labels. For this example it'll be 2 tuples
+    # of length 4 each.
+    handles, labels = g.get_legend_handles_labels()
+
+    # When creating the legend, only use the first two elements
+    # to effectively remove the last two.
+    l = plt.legend(handles[0:2], labels[0:2], bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
     plt.tight_layout()
     plt.savefig(output_path)
 
@@ -263,7 +273,7 @@ def main():
     else: 
         ref_pattern = "ref_pattern"
 
-    esm_output_file = "../../data/DIAN/esm_output_mat_files/" + results.filename + ".mat"
+    esm_output_file = "../../data/DIAN/esm_output_mat_files/xsec/" + results.filename + ".mat"
     esm_output = esm.loadmat(esm_output_file)
 
     ref_pattern_df = pd.DataFrame(index=esm_output['sub_ids'], 
