@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-esm_output_dir="../../data/DIAN/esm_output_mat_files/DIAN*epicenter*.mat"
+esm_output_dir="../../data/DIAN/esm_output_mat_files/xsec/DIAN*epicenter*.mat"
 for f in $esm_output_dir
 do
   # get base of filename 
