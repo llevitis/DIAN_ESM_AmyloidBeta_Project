@@ -5,6 +5,7 @@ import glob
 import sys
 import shutil 
 import re
+import pdb
 
 import nibabel as nib
 
@@ -24,7 +25,9 @@ import bct
 
 sys.path.insert(0,'..')
 import ESM_utils as esm
+import ESM_xsec_setup_inputs
 import ESM_xsec_analyze_outputs
+import ESM_longi_setup_inputs
 
 from scipy import stats
 from sklearn.metrics import mean_squared_error
@@ -36,35 +39,64 @@ import plotly.graph_objs as go
 from datetime import date
 import plotly.express as px
 
-def get_pup_roi_delta(v1_ref_pattern_df, v2_ref_pattern_df, pup_rois): 
-    t1_t2_puproimean_delta = []
-    for sub in v1_ref_pattern_df.index:
-        pup_roi_t1 = np.mean(v1_ref_pattern_df.loc[sub, pup_rois]) 
-        pup_roi_t2 = np.mean(v2_ref_pattern_df.loc[sub, pup_rois])
-        eyo_diff = v2_ref_pattern_df.loc[sub, 'DIAN_EYO'] - v1_ref_pattern_df.loc[sub, 'DIAN_EYO']
+# Return a float or list of floats equal to the average change in amyloid beta in 
+# the PUP ROIs between two timepoints.
+def get_pup_roi_delta(df_t1, df_t2, pup_rois): 
+    if len(df_t1.shape) > 1: 
+        t1_t2_puproimean_delta = []
+        for sub in df_t1.index:
+            pup_roi_t1 = np.mean(df_t1.loc[sub, pup_rois]) 
+            pup_roi_t2 = np.mean(df_t2.loc[sub, pup_rois])
+            eyo_diff = df_t2.loc[sub, 'DIAN_EYO'] - df_t1.loc[sub, 'DIAN_EYO']
+            pup_roi_delta = (pup_roi_t2 - pup_roi_t1) / eyo_diff 
+            t1_t2_puproimean_delta.append(pup_roi_delta)
+    else: 
+        pup_roi_t1 = np.mean(df_t1[pup_rois]) 
+        pup_roi_t2 = np.mean(df_t2[pup_rois])
+        eyo_diff = df_t2['DIAN_EYO'] - df_t1['DIAN_EYO']
         pup_roi_delta = (pup_roi_t2 - pup_roi_t1) / eyo_diff 
-        t1_t2_puproimean_delta.append(pup_roi_delta)
+        t1_t2_puproimean_delta = pup_roi_delta
+
     return t1_t2_puproimean_delta
 
+# Create the df passed to the gantt plotting function for all individuals who have 
+# 2+ visits
+def create_eyo_gantt_df(ab_prob_all_visits_df, pup_rois):
+    ab_prob_mc_v1_df = ab_prob_all_visits_df[(ab_prob_all_visits_df.Mutation == 1) & (ab_prob_all_visits_df.visitNumber == 1)]
+    ab_prob_mc_v2_df = ab_prob_all_visits_df[(ab_prob_all_visits_df.Mutation == 1) & (ab_prob_all_visits_df.visitNumber == 2)]
+    ab_prob_mc_v3_df = ab_prob_all_visits_df[(ab_prob_all_visits_df.Mutation == 1) & (ab_prob_all_visits_df.visitNumber == 3)]
+    ab_prob_gantt_df = pd.DataFrame(index=list(range(0,len(ab_prob_mc_v2_df.index))), 
+                                    columns=["Task", "EYO_Start", "EYO_Finish", "AB_Start", "Complete"])
+    ab_prob_gantt_df = ab_prob_gantt_df.rename(index=str)    
+    for i, sub in enumerate(ab_prob_mc_v2_df.index):
+        i = str(i)
+        ab_prob_gantt_df.loc[i, 'Task'] = sub
+        ab_prob_gantt_df.loc[i, 'Mutation'] = ab_prob_mc_v1_df.loc[sub, 'Mutation']
+        ab_prob_gantt_df.loc[i, 'EYO_Start'] = np.round(ab_prob_mc_v1_df.loc[sub, 'DIAN_EYO'],1)
+        ab_prob_gantt_df.loc[i, 'EYO_Finish'] = np.round(ab_prob_mc_v2_df.loc[sub, 'DIAN_EYO'],1)
+        ab_prob_gantt_df.loc[i, 'AB_Start'] = np.round(np.mean(ab_prob_mc_v1_df.loc[sub, pup_rois]),2)
+        ab_prob_gantt_df.loc[i, 'Duration'] = ab_prob_gantt_df.loc[i, 'EYO_Finish'] - ab_prob_gantt_df.loc[i, 'EYO_Start']
+        ab_prob_gantt_df.loc[i, 'Complete'] = get_pup_roi_delta(ab_prob_mc_v1_df.loc[sub,:],ab_prob_mc_v2_df.loc[sub,:], pup_rois)
+    last_idx = len(ab_prob_gantt_df.index) + 1
 
-def create_eyo_gantt_df(v1_ref_pattern_df, v2_ref_pattern_df, roi_labels):
-    ab_prob_gantt_df = pd.DataFrame(index=v1_ref_pattern_df.index, columns=["Task", "Start", "Finish", "Complete"])
-    for sub in v1_ref_pattern_df.index:
-        ab_prob_gantt_df.loc[sub, 'Task'] = sub
-        ab_prob_gantt_df.loc[sub, 'Mutation'] = v1_ref_pattern_df.loc[sub, 'Mutation']
-        ab_prob_gantt_df.loc[sub, 'Start'] = np.round(v1_ref_pattern_df.loc[sub, 'DIAN_EYO'],1)
-        ab_prob_gantt_df.loc[sub, 'Finish'] = np.round(v2_ref_pattern_df.loc[sub, 'DIAN_EYO'],1)
-        ab_prob_gantt_df.loc[sub, 'Complete'] = v1_ref_pattern_df.loc[sub, 'T1_T2_PUP_ROI_Delta']
-        ab_prob_gantt_df.loc[sub, 'Duration'] = ab_prob_gantt_df.loc[sub, 'Finish'] - ab_prob_gantt_df.loc[sub, 'Start']
+    for i, sub in enumerate(ab_prob_mc_v3_df.index): 
+        i = str(last_idx + i)
+        ab_prob_gantt_df.loc[i, 'Task'] = sub
+        ab_prob_gantt_df.loc[i, 'Mutation'] = ab_prob_mc_v1_df.loc[sub, 'Mutation']
+        ab_prob_gantt_df.loc[i, 'EYO_Start'] = np.round(ab_prob_mc_v2_df.loc[sub, 'DIAN_EYO'],1)
+        ab_prob_gantt_df.loc[i, 'EYO_Finish'] = np.round(ab_prob_mc_v3_df.loc[sub, 'DIAN_EYO'],1)
+        ab_prob_gantt_df.loc[i, 'AB_Start'] = np.round(np.mean(ab_prob_mc_v1_df.loc[sub, pup_rois]),2)
+        ab_prob_gantt_df.loc[i, 'Complete'] = get_pup_roi_delta(ab_prob_mc_v2_df.loc[sub,:],ab_prob_mc_v3_df.loc[sub,:], pup_rois)
+        ab_prob_gantt_df.loc[i, 'Duration'] = ab_prob_gantt_df.loc[i, 'EYO_Finish'] - ab_prob_gantt_df.loc[i, 'EYO_Start']
     return ab_prob_gantt_df
 
 def ab_eyo_gantt_plot(df, mut_status, output_dir, minn=-0.15): 
-    df_sorted = df[df.Mutation == mut_status].sort_values("Start", ascending=False)
+    df_sorted = df[df.Mutation == mut_status].sort_values("EYO_Start", ascending=False)
     # set colour map
     cmap = px.colors.diverging.balance
 
     ind0 = df_sorted.index[0]
-
+    # import pdb; pdb.set_trace()
     fig = go.Figure()
     minn = minn
     maxx = -minn
@@ -73,7 +105,7 @@ def ab_eyo_gantt_plot(df, mut_status, output_dir, minn=-0.15):
 
         # Potential Update: change opacity based on AB proba at start of bar
         # then, potentially, colour bars by normalized change (i.e. change / start proba)
-        alpha = 1 # opacity
+        alpha = 0.9 # opacity
         
         # Set colour bin from value -> map
         c = int(np.floor(len(cmap)*(row.Complete - minn) / (maxx - minn)))
@@ -89,38 +121,48 @@ def ab_eyo_gantt_plot(df, mut_status, output_dir, minn=-0.15):
                       "showscale": True,
                       "color": cmap[c],
                       "opacity": alpha,
-                      "colorscale": cmap}
+                      "colorscale": cmap,
+                      "line":{"width": 1,
+                              "color": 'DarkSlateGrey'},
+                      "colorbar": {"title": "Rate of Change",
+                                   "tickvals":[minn, 0, maxx]}}
         else:
             marker={"color": cmap[c],
                     "opacity": alpha,
+                    "line":{"width": .8,
+                            "color": 'DarkSlateGrey'},
                     "cmin": minn,
                     "cmax": maxx}
 
         # Add bar plot trace
         fig.add_trace(go.Bar(x0=row.Duration,
-                             base=[row.Start],
-                             y=[row.Task],
+                             base=[row.EYO_Start],
+                             y=[row.AB_Start],
+                            #  y=[row.Task],
                              orientation='h',
                              marker=marker,
                              hovertext=row.Complete,
-                             width=1.5))
+                            #  width=1.5))
+                             width=0.02))
 
     if mut_status == 1: 
         mut_status = "Mutation Carriers"
     else: 
         mut_status = "Noncarriers"
 
-    fig.update_layout(showlegend=False, plot_bgcolor='rgb(255,255,255)',
+    fig.update_layout(showlegend=False, plot_bgcolor='rgb(56, 57, 59)',
                       title={'text':u"A\u03B2 Deposition Change Between Visits (" + mut_status + ")",
                             'y':0.9,
                             'x':0.5,
                             'xanchor': 'center',
                             'yanchor': 'top'},
-                      yaxis={"title": "Subject", "tickvals": []},
-                      xaxis={"title": "Estimated Years to Symptom Onset"})
+                      yaxis={"title": "Initial AB Deposition Probability", "tickvals": [0, 0.5, 1],
+                            # },
+                             "range":[-0.05, 1.05]},
+                      xaxis={"title": "Estimated Years to Symptom Onset", "showgrid": False, "zeroline": False})
     fig.write_image(os.path.join(output_dir, "mc_t1_t2_gantt_plot.pdf"))
 
-def plot_t1_t2_relationship(esm_res):
+def plot_t1_t2_relationship(esm_res,output_dir):
     fig, (ax1, ax2) = plt.subplots(ncols=2, sharey=False, sharex=False, figsize=(6,3))
     axes = [ax1, ax2]
     nrows = 1
@@ -137,20 +179,21 @@ def plot_t1_t2_relationship(esm_res):
         r2 = r ** 2 
         axes[i].text(x=0.1, y=0.9, s="r2: {0}".format(str(np.round(r2, 3))))
     plt.tight_layout()
-    plt.savefig("../../figures/longi_ref.png")
+    plt.savefig(os.path.join(output_dir, "longi_ref.png"))
 
+# Set accumulation status.
 def set_acc_status(esm_res): 
     for sub in esm_res.index: 
-        if esm_res.loc[sub, 'T1_T2_Ref_PUP_ROI_Delta'] > 0: 
-            esm_res.loc[sub, 'Accumulator'] = True
+        if esm_res.loc[sub, 'T1_T2_Ref_PUP_ROI_Delta'] > 0.05: 
+            esm_res.loc[sub, 'Accumulator'] = "Yes"
         else: 
-            esm_res.loc[sub, 'Accumulator'] = False
+            esm_res.loc[sub, 'Accumulator'] = "No"
     return esm_res
 
 def plot_param_diff_acc_status(esm_res, output_dir):
     sns.set_style("whitegrid", {'axes.grid' : False})
     yaxis_labels = ["Deltas (Clearance Parameter)", "Betas (Production Parameter)", "Beta Delta Ratio (Log)"]
-    plt.figure(figsize=(19,5))
+    plt.figure(figsize=(19,7))
     nrows = 1
     ncols = 3
     titles = ["Clearance", "Production", "Production/Clearance"]
@@ -158,8 +201,8 @@ def plot_param_diff_acc_status(esm_res, output_dir):
         j = i + 1 
         plt.subplot(nrows, ncols, j)
         yaxis_label = yaxis_labels[i]
-        pal = {False: "mediumblue", True: "red"}
-        face_pal = {False: "cornflowerblue", True: "indianred"}
+        pal = {"No": "mediumblue", "Yes": "red"}
+        face_pal = {"No": "cornflowerblue", "Yes": "indianred"}
         y = y
         x = "Accumulator"
         data=esm_res[esm_res.Mutation == 1]
@@ -169,10 +212,10 @@ def plot_param_diff_acc_status(esm_res, output_dir):
                     data=data,
                     jitter=True, dodge=True, linewidth=0.5, palette=pal)
         g.set_xticklabels(["Non-accumulator", "Accumulator"], fontsize=18) 
-        #add_stat_annotation(g, data=data, x=x, y=y,
-        #                    box_pairs=[((False,True))],
-        #                    test='t-test_ind', text_format='star', loc='inside', verbose=2, 
-        #                    fontsize=24)
+        add_stat_annotation(g, data=data, x=x, y=y,
+                            box_pairs=[("No","Yes")],
+                            test='t-test_ind', text_format='star', loc='inside', verbose=2, 
+                            fontsize=18)
         plt.xlabel("", fontsize=24)
         plt.ylabel("", fontsize=18)
         plt.title(titles[i], fontsize=18)
@@ -180,35 +223,69 @@ def plot_param_diff_acc_status(esm_res, output_dir):
         plt.rc('ytick', labelsize=15)
     plt.savefig(os.path.join(output_dir, "param_diff_acc_status.png"))
 
+def regplot_params_vs_delta(esm_res, output_dir):
+    fig, (ax1, ax2, ax3) = plt.subplots(ncols=3, sharey=False, sharex=False, figsize=(15,6))
+    axes = [ax1, ax2, ax3]
+    nrows = 1
+    ncols = 3
+    y_items = ['BETAS_est', 'DELTAS_est', 'BDR_log']
+    titles = ['Production' , 'Clearance', 'Production/Clearance (Log)']
+    for i, y_item in enumerate(y_items):
+        j = i + 1 
+        plt.subplot(nrows, ncols, j)
+        x_pos = -0.15
+        y_pos = np.max(esm_res[y_items[i]])-0.1
+        axes[i] = sns.regplot(x=esm_res.T1_T2_Ref_PUP_ROI_Delta, y=esm_res[y_items[i]])
+        axes[i].set_title(titles[i], fontsize=18)
+        axes[i].set_xlabel("Delta in Cortical ROIs", fontsize=18)
+        axes[i].set_ylabel("")
+        r,p = stats.pearsonr(x=esm_res.T1_T2_Ref_PUP_ROI_Delta, y=esm_res[y_items[i]])
+        if p < 0.05: 
+            sig = "*" 
+        else: 
+            sig = "ns"
+        axes[i].text(x=x_pos, y=y_pos, s="r: {0}\np: {1}".format(str(np.round(r, 3)), sig), fontsize=14)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "regplot_params_vs_delta.png"))
 
 def main(): 
     parser = ArgumentParser()
     parser.add_argument("filename",
                         help="Please pass base filename of ESM output file to analyze")
+    parser.add_argument("ab_prob_matrix_dir", 
+                        help="Please pass the files directory containing the PiB-PET probability matrices")
     parser.add_argument("dataset", 
                         help="Please specify whether the analysis is being done for DIAN or ADNI.")
     results = parser.parse_args()
 
     # load DIAN metadata files
+    pib_df = pd.read_csv("../../data/DIAN/participant_metadata/pib_D1801.csv")
     genetic_df = pd.read_csv("../../data/DIAN/participant_metadata/GENETIC_D1801.csv")
     clinical_df = pd.read_csv("../../data/DIAN/participant_metadata/CLINICAL_D1801.csv")
+
+    ab_prob_matrix_dir = results.ab_prob_matrix_dir
+    file_paths = sorted(glob.glob(ab_prob_matrix_dir))
+    ab_prob_all_visits_df = ESM_xsec_setup_inputs.create_ab_prob_all_visits_df(file_paths, genetic_df, clinical_df, pib_df)
      
     esm_output_file = "../../data/DIAN/esm_output_mat_files/longi/" + results.filename + ".mat"
     esm_output = esm.loadmat(esm_output_file)
     output_dir = os.path.join("../../figures", results.filename)
     if not os.path.exists(output_dir): 
         os.mkdir(output_dir)
-    roi_labels = esm_output['roi_labels']
-    pup_rois = ESM_xsec_analyze_outputs.get_pup_cortical_analysis_cols(roi_labels)
+    roi_labels_esm_output = [x.rstrip() for x in esm_output['roi_labels']]
+    roi_labels = ab_prob_all_visits_df.columns[0:78]
+    roi_labels_to_keep = [y for y in roi_labels if not all([x==0 for x in ab_prob_all_visits_df[y]])]
+
+    pup_rois = ESM_xsec_analyze_outputs.get_pup_cortical_analysis_cols(roi_labels_esm_output)
 
     v1_ref_pattern_df = pd.DataFrame(index=esm_output['sub_ids'], 
-                                 columns=esm_output['roi_labels'], 
+                                 columns=roi_labels_esm_output, 
                                  data=esm_output['bl_pattern'].transpose())
     v2_ref_pattern_df = pd.DataFrame(index=esm_output['sub_ids'], 
-                                 columns=esm_output['roi_labels'], 
+                                 columns=roi_labels_esm_output, 
                                  data=esm_output['ref_pattern'].transpose())
     v2_pred_pattern_df = pd.DataFrame(index=esm_output['sub_ids'], 
-                                 columns=esm_output['roi_labels'], 
+                                 columns=roi_labels_esm_output, 
                                  data=esm_output['model_solutions0'].transpose()) 
 
     v1_ref_pattern_df.loc[:, 'visit_label'] = [x for x in list(esm_output['visit_v1'][0])]                   
@@ -220,7 +297,7 @@ def main():
         df['Mutation'] = 1
 
     v1_ref_pattern_df['T1_T2_PUP_ROI_Delta'] = get_pup_roi_delta(v1_ref_pattern_df, v2_ref_pattern_df, pup_rois)
-    gantt_df = create_eyo_gantt_df(v1_ref_pattern_df, v2_ref_pattern_df, roi_labels)
+    gantt_df = create_eyo_gantt_df(ab_prob_all_visits_df, pup_rois)
     ab_eyo_gantt_plot(gantt_df, mut_status=1, output_dir=output_dir, minn=-0.2)
 
     esm_res = pd.DataFrame(index=v1_ref_pattern_df.index, 
@@ -246,8 +323,8 @@ def main():
         esm_res.loc[sub, 'APOE'] = genetic_df[(genetic_df.IMAGID == sub)].apoe.values[0]
         esm_res.loc[sub, 'CDR_t1'] = clinical_df[(clinical_df.IMAGID == sub) & (clinical_df.visit == visit_t1)].cdrglob.values[0]
         esm_res.loc[sub, 'CDR_t2'] = clinical_df[(clinical_df.IMAGID == sub) & (clinical_df.visit == visit_t2)].cdrglob.values[0]
-        ref_delta_all_rois = ((v2_ref_pattern_df.loc[sub, roi_labels]) - (v1_ref_pattern_df.loc[sub, roi_labels]))/eyo_diff
-        pred_delta_all_rois = (v2_pred_pattern_df.loc[sub, roi_labels] - v1_ref_pattern_df.loc[sub, roi_labels])/eyo_diff
+        ref_delta_all_rois = ((v2_ref_pattern_df.loc[sub, roi_labels_esm_output]) - (v1_ref_pattern_df.loc[sub, roi_labels_esm_output]))/eyo_diff
+        pred_delta_all_rois = (v2_pred_pattern_df.loc[sub, roi_labels_esm_output] - v1_ref_pattern_df.loc[sub, roi_labels_esm_output])/eyo_diff
         r,p = stats.pearsonr(ref_delta_all_rois, pred_delta_all_rois)
         r2 = r ** 2 
         esm_res.loc[sub, 'r2_delta'] = r2
@@ -258,15 +335,62 @@ def main():
     esm_res.loc[:, 'T1_T2_Pred_PUP_ROI_Delta'] = get_pup_roi_delta(v1_ref_pattern_df, 
                                                                    v2_pred_pattern_df, 
                                                                    pup_rois)
-
     esm_res = set_acc_status(esm_res)
-    plot_t1_t2_relationship(esm_res)
+    plot_t1_t2_relationship(esm_res, output_dir)
     plot_param_diff_acc_status(esm_res, output_dir)
+    regplot_params_vs_delta(esm_res, output_dir)
 
-    print("Summary results for all individuals\navg r2: {0}\nstd: {1}".format(np.mean(esm_res['r2_delta']), np.std(esm_res['r2_delta'])))
-    print("Summary results for individuals with positive delta\navg r2: {0}\nstd: {1}".format(np.mean(esm_res[esm_res.Accumulator==True].r2_delta), np.std(esm_res[esm_res.Accumulator==True].r2_delta)))
-
+    print("Summary results for all individuals\navg r2: {0}\nstd: {1}".format(np.round(np.mean(esm_res['r2_delta']),3), np.round(np.std(esm_res['r2_delta']),3)))
     
+    ## set up inputs for validating the parameters using a 3rd timepoint
+    common_subs_v3 = sorted(ESM_longi_setup_inputs.intersection(list(esm_res.index), list(ab_prob_all_visits_df[ab_prob_all_visits_df.visitNumber == 3].index)))
+    # extract df for subjects' first timepoint for both mutation carriers and noncarriers  
+    # For each region, create a null distribution from noncarriers' signal 
+    # Calculate a z-score for each subject (with regards the non-carrier distribution) 
+    # Take the absolute value of this z-score 
+    # Normalize to 0-1
+    ab_prob_t2_mc = ab_prob_all_visits_df[(ab_prob_all_visits_df.visitNumber == 2) & (ab_prob_all_visits_df.Mutation == 1)]
+    ab_prob_t3_mc = ab_prob_all_visits_df[(ab_prob_all_visits_df.visitNumber == 3) & (ab_prob_all_visits_df.Mutation == 1)]
+    ab_prob_nc = ab_prob_all_visits_df[ab_prob_all_visits_df.Mutation == 0]
+
+    ab_prob_t2_mc_zscore = ab_prob_t2_mc.copy()
+    ab_prob_t2_mc_zscore = ESM_xsec_setup_inputs.zscore_mc_nc(ab_prob_t2_mc, ab_prob_nc, roi_labels_to_keep)
+
+    ab_prob_t3_mc_zscore = ab_prob_t3_mc.copy() 
+    ab_prob_t3_mc_zscore = ESM_xsec_setup_inputs.zscore_mc_nc(ab_prob_t3_mc, ab_prob_nc, roi_labels_to_keep)
+
+
+    # prepare inputs for ESM 
+    output_dir = '../../data/DIAN/esm_input_mat_files/'
+    conn_matrices = ['../../data/DIAN/connectivity_matrices/Matrix_ACP.mat', '../../data/DIAN/connectivity_matrices/Matrix_LONG.mat']
+    conn_mat_names = ['Map', 'Map']
+    conn_out_names = ['ACP', 'LONG']
+    file_names = "_".join(results.filename.split("_")[:-1])  + '_validation.mat'
+    ages = {'ages_v2': list(ab_prob_t2_mc_zscore.loc[common_subs_v3, 'VISITAGEc']),
+            'ages_v3': list(ab_prob_t3_mc_zscore.loc[common_subs_v3, 'VISITAGEc'])}
+    prob_matrices = {'v2': ab_prob_t2_mc_zscore.loc[common_subs_v3, roi_labels],
+                     'v3': ab_prob_t3_mc_zscore.loc[common_subs_v3, roi_labels]}
+    visit_labels = {'visit_v2': list(ab_prob_t2_mc_zscore.loc[common_subs_v3, 'visit']),
+                    'visit_v3': list(ab_prob_t3_mc_zscore.loc[common_subs_v3, 'visit'])}  
+    betas0_est = list(esm_output['BETAS0_est'].flatten())  
+    deltas0_est = list(esm_output['DELTAS0_est'].flatten())
+    epicenters_idx = [x-1 for x in list(esm_output['seed_regions_1'][0])]
+
+    esm.Prepare_Inputs_for_ESM(prob_matrices, 
+                               ages, 
+                               output_dir,
+                               file_names, 
+                               conn_matrices,
+                               conn_mat_names,
+                               conn_out_names,
+                               epicenters_idx,
+                               common_subs_v3, 
+                               visit_labels,
+                               roi_labels_to_keep,
+                               figure=False, 
+                               betas0=betas0_est, 
+                               deltas0=deltas0_est)
+
     
 if __name__ == "__main__":
     main()
