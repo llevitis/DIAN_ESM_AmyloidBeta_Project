@@ -102,17 +102,23 @@ def roi_performance_hist(ref_pattern_df, pred_pattern_df, roi_labels, output_dir
     plt.tight_layout()
     plt.savefig(output_path)
 
-def plot_subject_performance(res, output_dir, dataset): 
+def plot_subject_performance(res, epicenter, dataset, output_dir): 
     plt.figure(figsize=(5,5))
-    pal = {True: "mediumblue", False: "red"}
-    face_pal = {True: "cornflowerblue", False: "indianred"}
+    pal = {"Yes": "mediumblue", "No": "red"}
+    face_pal = {"Yes": "cornflowerblue", "No": "indianred"}
     g = sns.boxplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", palette=face_pal, fliersize=0)
     sns.stripplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", jitter=True, 
                   split=True, linewidth=0.5, palette=pal)
     g.set(xticklabels=["PSEN1", "PSEN2", "APP"])
     plt.xlabel("Mutation Type")
     plt.ylabel("Within subject r2")
-    plt.title("ESM X-Sec Performance Across Mutation Types")
+    if epicenter == "cortical": 
+        title = "Epicenter: MOF, PC, Precuneus"
+    elif epicenter == "subcortical": 
+        title = "Epicenter: Caudate and Putamen"
+    elif epicenter == "pc-cac": 
+        title = "Epicenter: Posterior cingulate & Caudal Anterior Cingulate"
+    plt.title(title)
     output_path = os.path.join(output_dir, "within_subject_xsec_perform_across_muttypes.png")
     # Get the handles and labels. For this example it'll be 2 tuples
     # of length 4 each.
@@ -129,9 +135,9 @@ def set_ab_positive(ref_pattern_df, rois_to_analyze):
         avg_ab_val = np.mean(list(ref_pattern_df.loc[sub, rois_to_analyze]))
         ref_pattern_df.loc[sub, 'PUP_ROI_AB_Mean'] = avg_ab_val
         if avg_ab_val > 0.1: 
-            ref_pattern_df.loc[sub, 'AB_Positive'] = True
+            ref_pattern_df.loc[sub, 'AB_Positive'] = "Yes"
         else: 
-            ref_pattern_df.loc[sub, 'AB_Positive'] = False
+            ref_pattern_df.loc[sub, 'AB_Positive'] = "No"
     return ref_pattern_df
 
 def get_mutation_type(subs, genetic_df):
@@ -163,9 +169,9 @@ def get_clinical_status(res, clinical_df):
         visit = res.loc[sub, 'visit_label']
         cdr = clinical_df[(clinical_df.IMAGID == sub) & (clinical_df.visit == visit)].cdrglob.values[0]
         if cdr > 0:  
-            res.loc[sub, 'Symptomatic'] = True 
+            res.loc[sub, 'Symptomatic'] = "Yes"
         else: 
-            res.loc[sub, 'Symptomatic'] = False
+            res.loc[sub, 'Symptomatic'] = "No"
         res.loc[sub, 'CDR'] = cdr
     return res
 
@@ -191,8 +197,8 @@ def plot_effective_anat_dist_vs_ab(ref_pattern_df, acp_matrix, epicenters_idx, r
                                   dtype="float")
     for i,roi in enumerate(roi_labels): 
         roi_dist_ab_df.loc[roi, "Effective_Anat_Distance"] = effective_anat_distance_dict[roi]
-        roi_dist_ab_df.loc[roi, "Avg_Deposition_Asymptomatic"] = np.mean(ref_pattern_df[ref_pattern_df.Symptomatic == False].loc[:, roi])
-        roi_dist_ab_df.loc[roi, "Avg_Deposition_Symptomatic"] = np.mean(ref_pattern_df[ref_pattern_df.Symptomatic == True].loc[:, roi])
+        roi_dist_ab_df.loc[roi, "Avg_Deposition_Asymptomatic"] = np.mean(ref_pattern_df[ref_pattern_df.Symptomatic == "Yes"].loc[:, roi])
+        roi_dist_ab_df.loc[roi, "Avg_Deposition_Symptomatic"] = np.mean(ref_pattern_df[ref_pattern_df.Symptomatic == "No"].loc[:, roi])
     
     fig, (ax1, ax2) = plt.subplots(ncols=2, sharey=False, sharex=False, figsize=(6,3))
     axes = [ax1, ax2]
@@ -219,8 +225,16 @@ def plot_clinical_status_vs_esm_params(res, output_dir):
     for i, param in enumerate(params):  
         j = i + 1 
         plt.subplot(nrows, ncols, j)
-        sns.boxplot(x="Symptomatic", y=param, data=res[res.AB_Positive == True])
-        plt.title(titles[i], fontsize=12) 
+        g = sns.boxplot(x="Symptomatic", y=param, data=res[res.AB_Positive == "Yes"])
+        add_stat_annotation(g, data=res[res.AB_Positive == "Yes"], x="Symptomatic", y=param,
+                        box_pairs=[("Yes","No")],
+                        test='t-test_ind', text_format='star', loc='inside', verbose=2, 
+                        fontsize=18)
+        plt.ylabel("")
+        plt.title(titles[i], fontsize=22) 
+        plt.xticks(fontsize=18) 
+        plt.yticks(fontsize=18)
+        plt.xlabel("Symptomatic",fontsize=18)
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "clinical_status_vs_esm_params.png"))
 
@@ -253,6 +267,16 @@ def plot_ref_vs_pred_group_brain(ref_pattern_df, pred_pattern_df, roi_labels, ou
     fig.text(x=0.65, y=0.9,s="Predicted", fontsize=36)
     plt.savefig(os.path.join(output_dir, "ref_vs_pred_group_brain.png"))
 
+
+def plot_sub_level_r2_hist(res, output_dir):
+    plt.figure(figsize=(5,5))
+    avg = np.mean(res.model_r2) 
+    g = sns.distplot(res.model_r2)
+    ymin, ymax = g.get_ylim()
+    xmin, xmax = g.get_xlim()
+    g.text(x=xmax-0.5, y=ymax-0.5, s="avg: {0}".format(avg))
+    plt.savefig(os.path.join(output_dir, "sub_level_r2_hist.png"))
+
 def main(): 
     parser = ArgumentParser()
     parser.add_argument("filename",
@@ -275,6 +299,8 @@ def main():
 
     esm_output_file = "../../data/DIAN/esm_output_mat_files/xsec/" + results.filename + ".mat"
     esm_output = esm.loadmat(esm_output_file)
+
+    epicenter = esm_output_file.split("/")[-1].split(".")[0].split("_")[8].split("epicenter-")[1] 
 
     ref_pattern_df = pd.DataFrame(index=esm_output['sub_ids'], 
                                  columns=esm_output['roi_labels'], 
@@ -303,6 +329,8 @@ def main():
                                    labels=roi_labels,
                                    lit=True,
                                    plot=False)
+    
+    plot_sub_level_r2_hist(res, output_dir)
 
     for i, sub in enumerate(res.index): 
         res.loc[sub, 'esm_idx'] = i
@@ -339,7 +367,7 @@ def main():
                                     pred_pattern_df.loc[:, cols_to_evaluate].mean(0))[0] ** 2 
     print("performance with excluded subcortical rois: {0}".format(np.round(r2_ab_imp_cols, 3)))   
 
-    r2_sub = np.mean(res[res.AB_Positive == True].model_r2)
+    r2_sub = np.mean(res[res.AB_Positive == "Yes"].model_r2)
     print("ab pos sub level performance avg: {0}".format(r2_sub))                     
     
     plot_aggregate_roi_performance(ref_pattern_df, 
@@ -354,7 +382,7 @@ def main():
                                                   pred_pattern_df, 
                                                   roi_labels, 
                                                   output_dir)
-        plot_subject_performance(res, output_dir, dataset)
+        plot_subject_performance(res, epicenter, dataset, output_dir)
 
 if __name__ == "__main__":
     main()
