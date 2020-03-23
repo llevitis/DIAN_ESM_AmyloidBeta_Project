@@ -824,7 +824,7 @@ def Prepare_Inputs_for_ESM(prob_matrices, ages, output_dir, file_name,
                            conn_matrices = [], conn_mat_names = [],
                            conn_out_names = [], epicenters_idx = [], 
                            sub_ids = [], visit_labels = [], roi_labels = [],
-                           figure = True):
+                           figure = True, betas0 = None, deltas0 = None):
     '''
     This script will convert data into a matfile compatible with
     running the ESM, and will print outputs to be entered into
@@ -939,6 +939,12 @@ def Prepare_Inputs_for_ESM(prob_matrices, ages, output_dir, file_name,
 
     if type(roi_labels) == list:  
         prob_matrices.update({'roi_labels': roi_labels})
+
+    if type(betas0) == list: 
+        prob_matrices.update({'betas': betas0})
+
+    if type(deltas0) == list: 
+        prob_matrices.update({'deltas': deltas0})
 
     fl_out = os.path.join(output_dir,file_name)
     savemat(fl_out,prob_matrices)

@@ -150,7 +150,7 @@ def ab_eyo_gantt_plot(df, mut_status, output_dir, minn=-0.15):
     else: 
         mut_status = "Noncarriers"
 
-    fig.update_layout(showlegend=False, plot_bgcolor='rgb(56, 57, 59)',
+    fig.update_layout(showlegend=False, plot_bgcolor='rgb(255, 255, 255)',
                       title={'text':u"A\u03B2 Deposition Change Between Visits (" + mut_status + ")",
                             'y':0.9,
                             'x':0.5,
@@ -180,11 +180,12 @@ def plot_t1_t2_relationship(esm_res,output_dir):
         axes[i].text(x=0.1, y=0.9, s="r2: {0}".format(str(np.round(r2, 3))))
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "longi_ref.png"))
+    plt.close()
 
 # Set accumulation status.
 def set_acc_status(esm_res): 
     for sub in esm_res.index: 
-        if esm_res.loc[sub, 'T1_T2_Ref_PUP_ROI_Delta'] > 0.05: 
+        if esm_res.loc[sub, 'Ref_PUP_ROI_Delta'] > 0: 
             esm_res.loc[sub, 'Accumulator'] = "Yes"
         else: 
             esm_res.loc[sub, 'Accumulator'] = "No"
@@ -211,17 +212,24 @@ def plot_param_diff_acc_status(esm_res, output_dir):
         sns.stripplot(x=x, y=y, 
                     data=data,
                     jitter=True, dodge=True, linewidth=0.5, palette=pal)
-        g.set_xticklabels(["Non-accumulator", "Accumulator"], fontsize=18) 
+        g.set_xticklabels(["Non-accumulator", "Accumulator"], fontsize=24) 
         add_stat_annotation(g, data=data, x=x, y=y,
                             box_pairs=[("No","Yes")],
                             test='t-test_ind', text_format='star', loc='inside', verbose=2, 
                             fontsize=18)
         plt.xlabel("", fontsize=24)
         plt.ylabel("", fontsize=18)
-        plt.title(titles[i], fontsize=18)
-        plt.rc('xtick',labelsize=15)
-        plt.rc('ytick', labelsize=15)
+        plt.title(titles[i], fontsize=24)
+        plt.rc('xtick',labelsize=24)
+        plt.rc('ytick', labelsize=24)
+    plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "param_diff_acc_status.png"))
+    plt.close()
+
+def regional_var_explained_abs_ab(v2_ref_pattern_df, v2_pred_pattern_df, roi_labels):
+    r,p = stats.pearsonr(v2_ref_pattern_df[roi_labels].mean(1), v2_pred_pattern_df[roi_labels].mean(1))
+    r2 = r ** 2 
+    return r2
 
 def regplot_params_vs_delta(esm_res, output_dir):
     fig, (ax1, ax2, ax3) = plt.subplots(ncols=3, sharey=False, sharex=False, figsize=(15,6))
@@ -235,11 +243,11 @@ def regplot_params_vs_delta(esm_res, output_dir):
         plt.subplot(nrows, ncols, j)
         x_pos = -0.15
         y_pos = np.max(esm_res[y_items[i]])-0.1
-        axes[i] = sns.regplot(x=esm_res.T1_T2_Ref_PUP_ROI_Delta, y=esm_res[y_items[i]])
+        axes[i] = sns.regplot(x=esm_res.Ref_PUP_ROI_Delta, y=esm_res[y_items[i]])
         axes[i].set_title(titles[i], fontsize=18)
         axes[i].set_xlabel("Delta in Cortical ROIs", fontsize=18)
         axes[i].set_ylabel("")
-        r,p = stats.pearsonr(x=esm_res.T1_T2_Ref_PUP_ROI_Delta, y=esm_res[y_items[i]])
+        r,p = stats.pearsonr(x=esm_res.Ref_PUP_ROI_Delta, y=esm_res[y_items[i]])
         if p < 0.05: 
             sig = "*" 
         else: 
@@ -247,6 +255,7 @@ def regplot_params_vs_delta(esm_res, output_dir):
         axes[i].text(x=x_pos, y=y_pos, s="r: {0}\np: {1}".format(str(np.round(r, 3)), sig), fontsize=14)
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "regplot_params_vs_delta.png"))
+    plt.close()
 
 def main(): 
     parser = ArgumentParser()
@@ -296,7 +305,7 @@ def main():
         df['DIAN_EYO'] = ESM_xsec_analyze_outputs.get_eyo(df.index, df.visit_label, clinical_df)
         df['Mutation'] = 1
 
-    v1_ref_pattern_df['T1_T2_PUP_ROI_Delta'] = get_pup_roi_delta(v1_ref_pattern_df, v2_ref_pattern_df, pup_rois)
+    #v1_ref_pattern_df['T1_T2_PUP_ROI_Delta'] = get_pup_roi_delta(v1_ref_pattern_df, v2_ref_pattern_df, pup_rois)
     gantt_df = create_eyo_gantt_df(ab_prob_all_visits_df, pup_rois)
     ab_eyo_gantt_plot(gantt_df, mut_status=1, output_dir=output_dir, minn=-0.2)
 
@@ -328,20 +337,26 @@ def main():
         r,p = stats.pearsonr(ref_delta_all_rois, pred_delta_all_rois)
         r2 = r ** 2 
         esm_res.loc[sub, 'r2_delta'] = r2
+        r,p = stats.pearsonr(v2_ref_pattern_df.loc[sub, roi_labels_esm_output], v2_pred_pattern_df.loc[sub, roi_labels_esm_output])
+        r2 = r ** 2 
+        esm_res.loc[sub, 'r2_abs'] = r2
 
-    esm_res.loc[:, 'T1_T2_Ref_PUP_ROI_Delta'] = get_pup_roi_delta(v1_ref_pattern_df, 
-                                                                  v2_ref_pattern_df, 
-                                                                  pup_rois)
-    esm_res.loc[:, 'T1_T2_Pred_PUP_ROI_Delta'] = get_pup_roi_delta(v1_ref_pattern_df, 
+    esm_res.loc[:, 'Ref_PUP_ROI_Delta'] = get_pup_roi_delta(v1_ref_pattern_df, 
+                                                            v2_ref_pattern_df, 
+                                                            pup_rois)
+    esm_res.loc[:, 'Pred_PUP_ROI_Delta'] = get_pup_roi_delta(v1_ref_pattern_df, 
                                                                    v2_pred_pattern_df, 
                                                                    pup_rois)
+
     esm_res = set_acc_status(esm_res)
     plot_t1_t2_relationship(esm_res, output_dir)
     plot_param_diff_acc_status(esm_res, output_dir)
     regplot_params_vs_delta(esm_res, output_dir)
 
+
     print("Summary results for all individuals\navg r2: {0}\nstd: {1}".format(np.round(np.mean(esm_res['r2_delta']),3), np.round(np.std(esm_res['r2_delta']),3)))
-    
+    print("Average within subject (abs value) variance explained: {0}".format(np.mean(esm_res.loc[:, 'r2_abs'])))
+
     ## set up inputs for validating the parameters using a 3rd timepoint
     common_subs_v3 = sorted(ESM_longi_setup_inputs.intersection(list(esm_res.index), list(ab_prob_all_visits_df[ab_prob_all_visits_df.visitNumber == 3].index)))
     # extract df for subjects' first timepoint for both mutation carriers and noncarriers  
@@ -349,15 +364,15 @@ def main():
     # Calculate a z-score for each subject (with regards the non-carrier distribution) 
     # Take the absolute value of this z-score 
     # Normalize to 0-1
-    ab_prob_t2_mc = ab_prob_all_visits_df[(ab_prob_all_visits_df.visitNumber == 2) & (ab_prob_all_visits_df.Mutation == 1)]
-    ab_prob_t3_mc = ab_prob_all_visits_df[(ab_prob_all_visits_df.visitNumber == 3) & (ab_prob_all_visits_df.Mutation == 1)]
+
+    ab_prob_mc = ab_prob_all_visits_df[ab_prob_all_visits_df.Mutation == 1]
     ab_prob_nc = ab_prob_all_visits_df[ab_prob_all_visits_df.Mutation == 0]
 
-    ab_prob_t2_mc_zscore = ab_prob_t2_mc.copy()
-    ab_prob_t2_mc_zscore = ESM_xsec_setup_inputs.zscore_mc_nc(ab_prob_t2_mc, ab_prob_nc, roi_labels_to_keep)
+    ab_prob_mc_zscore = ab_prob_mc.copy()
+    ab_prob_mc_zscore = ESM_xsec_setup_inputs.zscore_mc_nc(ab_prob_mc, ab_prob_nc, roi_cols_to_keep)
 
-    ab_prob_t3_mc_zscore = ab_prob_t3_mc.copy() 
-    ab_prob_t3_mc_zscore = ESM_xsec_setup_inputs.zscore_mc_nc(ab_prob_t3_mc, ab_prob_nc, roi_labels_to_keep)
+    ab_prob_t2_mc_zscore = ab_prob_mc_zscore[ab_prob_mc_zscore.visitNumber == 2]
+    ab_prob_t3_mc_zscore = ab_prob_mc_zscore[ab_prob_mc_zscore.visitNumber == 3]
 
 
     # prepare inputs for ESM 
@@ -391,6 +406,68 @@ def main():
                                betas0=betas0_est, 
                                deltas0=deltas0_est)
 
-    
+    # figure out how to run the esm longi validation script from here
+
+    longi_validation_file = glob.glob("../../data/DIAN/esm_output_mat_files/longi/" + "_".join(results.filename.split("_")[:-1])  + '_validation*.mat')[0]
+    longi_validation_mat = esm.loadmat(longi_validation_file)
+
+    esm_validation_res = pd.DataFrame(index=common_subs_v3, 
+                           columns=["Mutation", "DIAN_EYO_t2", "visit_t2", "visit_t3"])
+
+    esm_validation_res.loc[:, 'Mutation'] = v1_ref_pattern_df.loc[common_subs_v3, 'Mutation']
+    esm_validation_res.loc[:, 'DIAN_EYO_t2'] = v2_ref_pattern_df.loc[common_subs_v3, 'DIAN_EYO']
+    esm_validation_res.loc[:, 'visit_t2'] = list(ab_prob_t2_mc_zscore.loc[common_subs_v3, 'visit'])
+    esm_validation_res.loc[:, 'visit_t3'] = list(ab_prob_t3_mc_zscore.loc[common_subs_v3, 'visit'])
+    esm_validation_res.loc[:, 'age_t2'] = list(ab_prob_t2_mc_zscore.loc[common_subs_v3, 'VISITAGEc'])
+    esm_validation_res.loc[:, 'age_t3'] = list(ab_prob_t3_mc_zscore.loc[common_subs_v3, 'VISITAGEc'])
+
+    v3_ref_pattern_df = pd.DataFrame(index=common_subs_v3, 
+                                 columns=roi_labels_esm_output, 
+                                 data=longi_validation_mat['ref_pattern'].transpose())
+    v3_pred_pattern_df = pd.DataFrame(index=common_subs_v3, 
+                                 columns=roi_labels_esm_output, 
+                                 data=longi_validation_mat['model_solutions0'].transpose()) 
+
+    for df in [v3_ref_pattern_df, v3_pred_pattern_df]: 
+        df['visit_label'] = list(ab_prob_t3_mc_zscore.loc[common_subs_v3, 'visit'])
+        df['DIAN_EYO'] = ESM_xsec_analyze_outputs.get_eyo(df.index, df.visit_label, clinical_df)
+
+    group_validation_r,p = stats.pearsonr(v3_ref_pattern_df.mean(1), v3_pred_pattern_df.mean(1))
+    print("validation group r2: {0}".format(np.round(group_validation_r ** 2), 2)) 
+
+    esm_validation_res.loc[:, 'Ref_PUP_ROI_Delta'] = get_pup_roi_delta(v2_ref_pattern_df.loc[common_subs_v3,:] ,
+                                                                       v3_ref_pattern_df.loc[common_subs_v3,:],
+                                                                       pup_rois)
+    esm_validation_res.loc[:, 'Pred_PUP_ROI_Delta'] = get_pup_roi_delta(v2_ref_pattern_df.loc[common_subs_v3,:], 
+                                                                        v3_pred_pattern_df.loc[common_subs_v3,:], 
+                                                                        pup_rois)
+    esm_validation_res = set_acc_status(esm_validation_res)
+
+    for sub in esm_validation_res.index: 
+        esm_validation_res.loc[sub, 'pup_roi_ref_t2'] = np.mean(v2_ref_pattern_df.loc[sub, pup_rois])
+        esm_validation_res.loc[sub, 'pup_roi_ref_t3'] = np.mean(v3_ref_pattern_df.loc[sub, pup_rois])
+        esm_validation_res.loc[sub, 'pup_roi_pred_t3'] = np.mean(v3_pred_pattern_df.loc[sub, pup_rois])
+        eyo_diff = esm_validation_res.loc[sub, 'age_t3'] - esm_validation_res.loc[sub, 'age_t2']
+        ref_delta_all_rois = (v3_ref_pattern_df.loc[sub, roi_labels_esm_output] - v2_ref_pattern_df.loc[sub, roi_labels_esm_output])/eyo_diff
+        pred_delta_all_rois = (v3_pred_pattern_df.loc[sub, roi_labels_esm_output] - v2_ref_pattern_df.loc[sub, roi_labels_esm_output])/eyo_diff
+        r,p = stats.pearsonr(ref_delta_all_rois, pred_delta_all_rois)
+        r2 = r ** 2 
+        esm_validation_res.loc[sub, 'r2_delta'] = r2
+        esm_validation_res.loc[sub, 'T1-T2_Delta'] = esm_res.loc[sub, 'Ref_PUP_ROI_Delta']
+        esm_validation_res.loc[sub, 'T1_T2_Acc_Status'] = esm_res.loc[sub, 'Accumulator']
+        if esm_validation_res.loc[sub, 'T1_T2_Acc_Status'] == "Yes" and esm_validation_res.loc[sub, 'Accumulator'] == "Yes": 
+            esm_validation_res.loc[sub, 't1-t3_acc_status'] = "A-A"
+        elif esm_validation_res.loc[sub, 'T1_T2_Acc_Status'] == "Yes" and esm_validation_res.loc[sub, 'Accumulator'] == "No": 
+            esm_validation_res.loc[sub, 't1-t3_acc_status'] = "A-NA"
+        elif esm_validation_res.loc[sub, 'T1_T2_Acc_Status'] == "No" and esm_validation_res.loc[sub, 'Accumulator'] == "Yes": 
+            esm_validation_res.loc[sub, 't1-t3_acc_status'] = "NA-A"
+        else: 
+            esm_validation_res.loc[sub, 't1-t3_acc_status'] = "NA-NA"
+
+    pdb.set_trace()
+    sns.boxplot(x="t1-t3_acc_status", y="r2_delta", data=esm_validation_res) 
+    plt.show()
+        
+
 if __name__ == "__main__":
     main()
