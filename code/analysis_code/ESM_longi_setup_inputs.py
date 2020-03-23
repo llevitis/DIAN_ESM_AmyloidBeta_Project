@@ -48,26 +48,9 @@ def main():
 
     pib_df = pd.read_csv("../../data/DIAN/participant_metadata/pib_D1801.csv")
     genetic_df = pd.read_csv("../../data/DIAN/participant_metadata/GENETIC_D1801.csv")
-    clinical_df = pd.read_csv("../../data/DIAN/participant_metadata/CLINICAL_D1801.csv")
-
-    ab_prob_df_list = []
-    for i, fp in enumerate(file_paths): 
-        ab_curr_prob_df = pd.read_csv(file_paths[i], index_col=0)
-        visit = file_paths[i].split(".")[-2].split("_")[-1]
-        ab_curr_prob_df.loc[:, 'visit'] = visit
-        #drop participants that did not pass QC according to PUP's PET processing
-        for sub in ab_curr_prob_df.index: 
-            if not ((pib_df['IMAGID'] == sub) & (pib_df['visit'] == visit)).any(): 
-                ab_curr_prob_df = ab_curr_prob_df[ab_curr_prob_df.index != sub]
-        ab_prob_df_list.append(ab_curr_prob_df)
+    clinical_df = pd.read_csv("../../data/DIAN/participant_metadata/CLINICAL_D1801.csv")   
     
-    #concatenate all dataframes
-    ab_prob_all_visits_df = pd.concat(ab_prob_df_list) 
-    #add metadata to the dataframe 
-    ab_prob_all_visits_df = ESM_xsec_setup_inputs.add_metadata_to_amyloid_df(ab_prob_all_visits_df,
-                                                                             genetic_df, 
-                                                                             clinical_df)    
-    
+    ab_prob_all_visits_df = ESM_xsec_setup_inputs.create_ab_prob_all_visits_df(file_paths, genetic_df, clinical_df, pib_df)
 
     # get column names corresponding to ROIs
     roi_cols = ab_prob_all_visits_df.columns[0:78]
@@ -81,22 +64,19 @@ def main():
             epicenters_idx.append(i+1)
 
     
-    # extract df for subjects' first timepoint for both mutation carriers and noncarriers  
+    # extract df for subjects' first timepoint for mutation carriers and df for all noncarriers
     # For each region, create a null distribution from noncarriers' signal 
     # Calculate a z-score for each subject (with regards the non-carrier distribution) 
     # Take the absolute value of this z-score 
     # Normalize to 0-1
-    ab_prob_t1_mc = ab_prob_all_visits_df[(ab_prob_all_visits_df.visitNumber == 1) & (ab_prob_all_visits_df.Mutation == 1)]
-    ab_prob_t1_nc = ab_prob_all_visits_df[(ab_prob_all_visits_df.visitNumber == 1) & (ab_prob_all_visits_df.Mutation == 0)]
+    ab_prob_mc = ab_prob_all_visits_df[ab_prob_all_visits_df.Mutation == 1]
+    ab_prob_nc = ab_prob_all_visits_df[ab_prob_all_visits_df.Mutation == 0]
 
-    ab_prob_t2_mc = ab_prob_all_visits_df[(ab_prob_all_visits_df.visitNumber == 2) & (ab_prob_all_visits_df.Mutation == 1)]
-    ab_prob_t2_nc = ab_prob_all_visits_df[(ab_prob_all_visits_df.visitNumber == 2) & (ab_prob_all_visits_df.Mutation == 0)]
+    ab_prob_mc_zscore = ab_prob_mc.copy()
+    ab_prob_mc_zscore = ESM_xsec_setup_inputs.zscore_mc_nc(ab_prob_mc, ab_prob_nc, roi_cols_to_keep)
 
-    ab_prob_t1_mc_zscore = ab_prob_t1_mc.copy()
-    ab_prob_t1_mc_zscore = ESM_xsec_setup_inputs.zscore_mc_nc(ab_prob_t1_mc, ab_prob_t1_nc, roi_cols_to_keep)
-
-    ab_prob_t2_mc_zscore = ab_prob_t2_mc.copy() 
-    ab_prob_t2_mc_zscore = ESM_xsec_setup_inputs.zscore_mc_nc(ab_prob_t2_mc, ab_prob_t2_nc, roi_cols_to_keep)
+    ab_prob_t1_mc_zscore = ab_prob_mc_zscore[ab_prob_mc_zscore.visitNumber == 1]
+    ab_prob_t2_mc_zscore = ab_prob_mc_zscore[ab_prob_mc_zscore.visitNumber == 2] 
 
     common_subs = sorted(intersection(list(ab_prob_t1_mc_zscore.index), list(ab_prob_t2_mc_zscore.index)))    
 

@@ -4,6 +4,7 @@ import os
 import glob 
 import sys
 import shutil 
+import pdb
 import re
 from argparse import ArgumentParser
 
@@ -18,6 +19,25 @@ import ESM_utils as esm
 from scipy.optimize import curve_fit
 from sklearn.preprocessing import MinMaxScaler
  
+def create_ab_prob_all_visits_df(file_paths, genetic_df, clinical_df, pib_df): 
+    ab_prob_df_list = []
+    for i, fp in enumerate(file_paths): 
+        ab_curr_prob_df = pd.read_csv(file_paths[i], index_col=0)
+        visit = file_paths[i].split(".")[-2].split("_")[-1]
+        ab_curr_prob_df.loc[:, 'visit'] = visit
+        #drop participants that did not pass QC according to PUP's PET processing
+        for sub in ab_curr_prob_df.index: 
+            if not ((pib_df['IMAGID'] == sub) & (pib_df['visit'] == visit)).any(): 
+                ab_curr_prob_df = ab_curr_prob_df[ab_curr_prob_df.index != sub]
+        ab_prob_df_list.append(ab_curr_prob_df)
+    
+    #concatenate all dataframes
+    ab_prob_all_visits_df = pd.concat(ab_prob_df_list) 
+    #add metadata to the dataframe 
+    ab_prob_all_visits_df = add_metadata_to_amyloid_df(ab_prob_all_visits_df,
+                                                       genetic_df, 
+                                                       clinical_df)
+    return ab_prob_all_visits_df
 
 def add_metadata_to_amyloid_df(df, genetic_df, clinical_df):
     for sub in df.index: 
@@ -126,6 +146,11 @@ def sigmoid_normalization(ab_prob_df):
     ab_prob_df_scaled = ab_prob_df_scaled.loc[ab_prob_df.index, ab_prob_df.columns]
     return ab_prob_df_scaled
 
+def plot_roi_sub_heatmap(ab_prob_df, roi_cols):
+    esm.Plot_Probabilites(ab_prob_df[roi_cols])
+    plt.savefig(os.path.join("../../figures/", "roi_sub_heatmap.png"))
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument("--ab_prob_matrix_dir",
@@ -161,24 +186,7 @@ def main():
     genetic_df = pd.read_csv("../../data/DIAN/participant_metadata/GENETIC_D1801.csv")
     clinical_df = pd.read_csv("../../data/DIAN/participant_metadata/CLINICAL_D1801.csv")
 
-    ab_prob_df_list = []
-    for i, fp in enumerate(file_paths): 
-        ab_curr_prob_df = pd.read_csv(file_paths[i], index_col=0)
-        visit = file_paths[i].split(".")[-2].split("_")[-1]
-        ab_curr_prob_df.loc[:, 'visit'] = visit
-        #drop participants that did not pass QC according to PUP's PET processing
-        for sub in ab_curr_prob_df.index: 
-            if not ((pib_df['IMAGID'] == sub) & (pib_df['visit'] == visit)).any(): 
-                ab_curr_prob_df = ab_curr_prob_df[ab_curr_prob_df.index != sub]
-        ab_prob_df_list.append(ab_curr_prob_df)
-    
-    #concatenate all dataframes
-    ab_prob_all_visits_df = pd.concat(ab_prob_df_list) 
-    #add metadata to the dataframe 
-    ab_prob_all_visits_df = add_metadata_to_amyloid_df(ab_prob_all_visits_df,
-                                                       genetic_df, 
-                                                       clinical_df)    
-    
+    ab_prob_all_visits_df = create_ab_prob_all_visits_df(file_paths, genetic_df, clinical_df, pib_df)   
 
     # get column names corresponding to ROIs
     roi_cols = ab_prob_all_visits_df.columns[0:78]
@@ -198,13 +206,15 @@ def main():
     # Calculate a z-score for each subject (with regards the non-carrier distribution) 
     # Take the absolute value of this z-score 
     # Normalize to 0-1
-    ab_prob_t1_mc = ab_prob_all_visits_df[(ab_prob_all_visits_df.visitNumber == 1) & (ab_prob_all_visits_df.Mutation == 1)]
-    ab_prob_t1_nc = ab_prob_all_visits_df[(ab_prob_all_visits_df.visitNumber == 1) & (ab_prob_all_visits_df.Mutation == 0)]
+    ab_prob_mc = ab_prob_all_visits_df[ab_prob_all_visits_df.Mutation == 1]
+    ab_prob_nc = ab_prob_all_visits_df[ab_prob_all_visits_df.Mutation == 0]
 
-    ab_prob_t1_mc_zscore = ab_prob_t1_mc.copy()
-    ab_prob_t1_mc_zscore = zscore_mc_nc(ab_prob_t1_mc, ab_prob_t1_nc, roi_cols_to_keep)
+    ab_prob_mc_zscore = ab_prob_mc.copy()
+    ab_prob_mc_zscore = zscore_mc_nc(ab_prob_mc, ab_prob_nc, roi_cols_to_keep)
 
-    #esm.Plot_Probabilites(ab_prob_t1_mc_zscore[roi_cols])
+    ab_prob_t1_mc_zscore = ab_prob_mc_zscore[ab_prob_mc_zscore.visitNumber == 1]
+
+    plot_roi_sub_heatmap(ab_prob_t1_mc_zscore, roi_cols)
 
     ab_prob_t1_mc_zscore_sigmoid = ab_prob_t1_mc_zscore.copy()
     if scale == True: 
@@ -216,9 +226,9 @@ def main():
     conn_mat_names = ['Map', 'Map']
     conn_out_names = ['ACP', 'LONG']
     file_names = esm_input_file + '.mat'
-    ages = list(ab_prob_t1_mc.loc[:, 'VISITAGEc'])
-    sub_ids = list(ab_prob_t1_mc.index)
-    visit_labels = list(ab_prob_t1_mc.loc[:, 'visit'])
+    ages = list(ab_prob_t1_mc_zscore.loc[:, 'VISITAGEc'])
+    sub_ids = list(ab_prob_t1_mc_zscore.index)
+    visit_labels = list(ab_prob_t1_mc_zscore.loc[:, 'visit'])
 
     # specify whether sigmoid normalized data is used as the test data. always include the un-normalized data.
 
