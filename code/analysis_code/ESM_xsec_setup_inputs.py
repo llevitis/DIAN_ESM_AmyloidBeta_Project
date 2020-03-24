@@ -147,8 +147,8 @@ def sigmoid_normalization(ab_prob_df):
     return ab_prob_df_scaled
 
 def plot_roi_sub_heatmap(ab_prob_df, roi_cols):
-    esm.Plot_Probabilites(ab_prob_df[roi_cols])
-    plt.savefig(os.path.join("../../figures/", "roi_sub_heatmap.png"))
+    path = os.path.join("../../figures/roi_sub_heatmap.png")
+    esm.Plot_Probabilites(ab_prob_df[roi_cols], cmap="Spectral_r", figsize=(20,10), path=path)
 
 
 def main():

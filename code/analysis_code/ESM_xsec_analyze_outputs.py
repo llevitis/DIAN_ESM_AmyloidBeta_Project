@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import pdb
 import glob 
 import sys
 import shutil 
@@ -104,12 +105,13 @@ def roi_performance_hist(ref_pattern_df, pred_pattern_df, roi_labels, output_dir
 
 def plot_subject_performance(res, epicenter, dataset, output_dir): 
     plt.figure(figsize=(5,5))
-    pal = {"Yes": "mediumblue", "No": "red"}
-    face_pal = {"Yes": "cornflowerblue", "No": "indianred"}
+    pal = {"No": "mediumblue", "Yes": "red"}
+    face_pal = {"No": "cornflowerblue", "Yes": "indianred"}
     g = sns.boxplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", palette=face_pal, fliersize=0)
     sns.stripplot(x="mutation_type", y="model_r2", data=res, hue="AB_Positive", jitter=True, 
                   split=True, linewidth=0.5, palette=pal)
     g.set(xticklabels=["PSEN1", "PSEN2", "APP"])
+    g.set_ylim([0,.8])
     plt.xlabel("Mutation Type")
     plt.ylabel("Within subject r2")
     if epicenter == "cortical": 
@@ -126,8 +128,8 @@ def plot_subject_performance(res, epicenter, dataset, output_dir):
 
     # When creating the legend, only use the first two elements
     # to effectively remove the last two.
-    l = plt.legend(handles[0:2], labels[0:2], bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
-    plt.tight_layout()
+    l = plt.legend(handles[0:2], labels[0:2], bbox_to_anchor=(.75, .98), loc=2, borderaxespad=0., title=r"A$\beta$ Positive")
+    #plt.tight_layout()
     plt.savefig(output_path)
 
 def set_ab_positive(ref_pattern_df, rois_to_analyze):
@@ -238,6 +240,24 @@ def plot_clinical_status_vs_esm_params(res, output_dir):
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "clinical_status_vs_esm_params.png"))
 
+def model_performance_summary(filename, ref_pattern_df, pred_pattern_df, roi_cols):
+    ref_region = filename.split("ref-")[1].split("_")[0]
+    epicenter = filename.split("epicenter-")[1].split("_")[0]
+    global_r, global_p = stats.pearsonr(ref_pattern_df[roi_cols].mean(0), pred_pattern_df[roi_cols].mean(0))
+    global_r2 = np.round(global_r ** 2,2)
+    sub_r2 = [] 
+    for sub in ref_pattern_df.index:
+        r,p = stats.pearsonr(ref_pattern_df.loc[sub, roi_cols], pred_pattern_df.loc[sub, roi_cols])
+        r2 = r ** 2
+        sub_r2.append(r2) 
+    sub_r2_avg = np.round(np.mean(sub_r2),2)
+
+    perform_df = pd.DataFrame(columns=["Pipeline", "ReferenceRegion", "Epicenter", "Global_R2", "Subject_R2"])
+    perform_df.loc[0] = ["PUP", ref_region, epicenter, global_r2, sub_r2_avg]
+    output_file = os.path.join("../results_csv", filename + ".csv")
+    perform_df.to_csv(output_file)
+
+
 def plot_ref_vs_pred_group_brain(ref_pattern_df, pred_pattern_df, roi_labels, output_dir): 
     dkt_atlas = nib.load("../../data/atlases/dkt_atlas_1mm.nii.gz")
     dkt_data = dkt_atlas.get_data()
@@ -300,7 +320,7 @@ def main():
     esm_output_file = "../../data/DIAN/esm_output_mat_files/xsec/" + results.filename + ".mat"
     esm_output = esm.loadmat(esm_output_file)
 
-    epicenter = esm_output_file.split("/")[-1].split(".")[0].split("_")[8].split("epicenter-")[1] 
+    epicenter = results.filename.split("epicenter-")[1].split("_")[0]
 
     ref_pattern_df = pd.DataFrame(index=esm_output['sub_ids'], 
                                  columns=esm_output['roi_labels'], 
@@ -351,29 +371,25 @@ def main():
         pred_pattern_df['DIAN_EYO'] = res['DIAN_EYO'] 
         res = get_clinical_status(res, clinical_df)
         ref_pattern_df.loc[:, 'Symptomatic'] = res.loc[:, 'Symptomatic']
+        model_performance_summary(results.filename, ref_pattern_df, pred_pattern_df, roi_labels)
         plot_clinical_status_vs_esm_params(res, output_dir)
         plot_effective_anat_dist_vs_ab(ref_pattern_df, acp_matrix, epicenters_idx, roi_labels, output_dir)
         plot_ref_vs_pred_group_brain(ref_pattern_df, pred_pattern_df, roi_labels, output_dir)
     if dataset == "ADNI": 
         clinical_mat = pd.read_csv("../../") 
 
-    cols_to_evaluate = list(roi_labels)
-    cols_to_remove = ["thalamus", "globus pallidus"]
-    for roi in roi_labels:
-        for roi2 in cols_to_remove: 
-            if roi2 in roi.lower():
-                cols_to_evaluate.remove(roi)
-    r2_ab_imp_cols = stats.pearsonr(ref_pattern_df.loc[:,cols_to_evaluate].mean(0), 
-                                    pred_pattern_df.loc[:, cols_to_evaluate].mean(0))[0] ** 2 
-    print("performance with excluded subcortical rois: {0}".format(np.round(r2_ab_imp_cols, 3)))   
+    # cols_to_evaluate = list(roi_labels)
+    # cols_to_remove = ["thalamus", "globus pallidus"]
+    # for roi in roi_labels:
+    #     for roi2 in cols_to_remove: 
+    #         if roi2 in roi.lower():
+    #             cols_to_evaluate.remove(roi)
+    # r2_ab_imp_cols = stats.pearsonr(ref_pattern_df.loc[:,cols_to_evaluate].mean(0), 
+    #                                 pred_pattern_df.loc[:, cols_to_evaluate].mean(0))[0] ** 2 
+    # print("performance with excluded subcortical rois: {0}".format(np.round(r2_ab_imp_cols, 3)))   
 
     r2_sub = np.mean(res[res.AB_Positive == "Yes"].model_r2)
     print("ab pos sub level performance avg: {0}".format(r2_sub))                     
-    
-    plot_aggregate_roi_performance(ref_pattern_df, 
-                                   pred_pattern_df, 
-                                   roi_labels, 
-                                   output_dir)
 
     roi_performance_hist(ref_pattern_df, pred_pattern_df, roi_labels, output_dir)
     
