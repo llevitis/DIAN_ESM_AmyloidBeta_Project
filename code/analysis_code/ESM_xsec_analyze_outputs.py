@@ -4,7 +4,8 @@ import os
 import pdb
 import glob 
 import sys
-import shutil 
+import shutil
+import json
 import re
 
 import nibabel as nib
@@ -22,6 +23,9 @@ import matplotlib.pyplot as plt
 import math
 from statannot import add_stat_annotation
 import bct
+import statsmodels
+import statsmodels.api as sm
+from statsmodels.formula.api import ols
 
 sys.path.insert(0,'..')
 import ESM_utils as esm
@@ -102,6 +106,16 @@ def roi_performance_hist(ref_pattern_df, pred_pattern_df, roi_labels, output_dir
     output_path = os.path.join(output_dir, "roi_performance_hist.png")
     plt.tight_layout()
     plt.savefig(output_path)
+
+def plot_conn_matrices(sc_mat, fc_mat):  
+    fig = plt.figure(figsize=(12,8)) 
+    ax1 = plt.subplot(1,2,1)  
+    plotting.plot_matrix(sc_mat[0:78,0:78], colorbar=False, cmap="Reds", axes=ax1) 
+    ax1.set_title("Structural Connectivity", fontsize=20) 
+    ax2 = plt.subplot(1,2,2)  
+    plotting.plot_matrix(fc_mat[0:78,0:78], colorbar=True, cmap="Reds", axes=ax2) 
+    ax2.set_title("Functional Connectivity", fontsize=20) 
+    plt.savefig("../../figures/conn_matrices_plot.png") 
 
 def plot_subject_performance(res, epicenter, dataset, output_dir): 
     plt.figure(figsize=(5,5))
@@ -199,8 +213,8 @@ def plot_effective_anat_dist_vs_ab(ref_pattern_df, acp_matrix, epicenters_idx, r
                                   dtype="float")
     for i,roi in enumerate(roi_labels): 
         roi_dist_ab_df.loc[roi, "Effective_Anat_Distance"] = effective_anat_distance_dict[roi]
-        roi_dist_ab_df.loc[roi, "Avg_Deposition_Asymptomatic"] = np.mean(ref_pattern_df[ref_pattern_df.Symptomatic == "Yes"].loc[:, roi])
-        roi_dist_ab_df.loc[roi, "Avg_Deposition_Symptomatic"] = np.mean(ref_pattern_df[ref_pattern_df.Symptomatic == "No"].loc[:, roi])
+        roi_dist_ab_df.loc[roi, "Avg_Deposition_Asymptomatic"] = np.mean(ref_pattern_df[ref_pattern_df.Symptomatic == "No"].loc[:, roi])
+        roi_dist_ab_df.loc[roi, "Avg_Deposition_Symptomatic"] = np.mean(ref_pattern_df[ref_pattern_df.Symptomatic == "Yes"].loc[:, roi])
     
     fig, (ax1, ax2) = plt.subplots(ncols=2, sharey=False, sharex=False, figsize=(6,3))
     axes = [ax1, ax2]
@@ -219,15 +233,16 @@ def plot_effective_anat_dist_vs_ab(ref_pattern_df, acp_matrix, epicenters_idx, r
     plt.savefig(os.path.join(output_dir, "effective_anat_dist_vs_ab.png"))
 
 def plot_clinical_status_vs_esm_params(res, output_dir):
-    plt.figure(figsize=(10,10))
+    plt.figure(figsize=(10,13))
     nrows = 2
     ncols = 2
     params = ["BETAS_est", "DELTAS_est", "BDR_log", "PUP_ROI_AB_Mean"]
-    titles = ["Production rate", "Clearance rate", "Prod/Clear rate", "Amyloid Beta"]
+    face_pal = {"No": "cornflowerblue", "Yes": "indianred"}
+    titles = ["Production Rate", "Clearance Rate", "Prod/Clear Ratio (Log)", "Amyloid Beta"]
     for i, param in enumerate(params):  
         j = i + 1 
         plt.subplot(nrows, ncols, j)
-        g = sns.boxplot(x="Symptomatic", y=param, data=res[res.AB_Positive == "Yes"])
+        g = sns.boxplot(x="Symptomatic", y=param, data=res[res.AB_Positive == "Yes"], palette=face_pal)
         add_stat_annotation(g, data=res[res.AB_Positive == "Yes"], x="Symptomatic", y=param,
                         box_pairs=[("Yes","No")],
                         test='t-test_ind', text_format='star', loc='inside', verbose=2, 
@@ -297,12 +312,100 @@ def plot_sub_level_r2_hist(res, output_dir):
     g.text(x=xmax-0.5, y=ymax-0.5, s="avg: {0}".format(avg))
     plt.savefig(os.path.join(output_dir, "sub_level_r2_hist.png"))
 
+def plot_pup_ab_vs_r2(res, output_dir):
+    fig = plt.figure(figsize=(5,3))
+    g = sns.lmplot(x="PUP_ROI_AB_Mean", y="model_r2", data=res, lowess=True) 
+    plt.xlabel(r"Average Cortical A$\beta$ Deposition")
+    plt.ylabel("Within subject r2")
+    g.set(ylim=(0, 1))
+    plt.savefig(os.path.join(output_dir, "pup_ab_vs_r2.png"))
+
+def add_csf_biomarker_info(res, biomarker_df, clinical_df):
+    for sub in res.index: 
+        visit = res.loc[sub, 'visit_label']
+        csf_ab42 = biomarker_df[(biomarker_df.IMAGID == sub) & (biomarker_df.visit == visit)].CSF_xMAP_AB42.values[0]
+        csf_tau = biomarker_df[(biomarker_df.IMAGID == sub) & (biomarker_df.visit == visit)].CSF_xMAP_tau.values[0]
+        csf_ptau = biomarker_df[(biomarker_df.IMAGID == sub) & (biomarker_df.visit == visit)].CSF_xMAP_ptau.values[0]
+        res.loc[sub, 'CSF_AB42'] = csf_ab42
+        res.loc[sub, 'CSF_Tau'] = csf_tau
+        res.loc[sub, 'CSF_pTau'] = csf_ptau
+        res.loc[sub, 'Age'] = clinical_df[(clinical_df.IMAGID == sub) & (clinical_df.visit == visit)].VISITAGEc.values[0]
+        res.loc[sub, 'Gender'] = clinical_df[(clinical_df.IMAGID == sub) & (clinical_df.visit == visit)].gender.values[0]
+        res.loc[sub, 'Education'] = clinical_df[(clinical_df.IMAGID == sub) & (clinical_df.visit == visit)].EDUC.values[0]
+    return res
+
+def plot_anova_csf_results(res, output_dir):  
+    sns.set_style("white", {'axes.grid' : False})
+    csf_ab42_formula = 'CSF_AB42 ~ BETAS_est + DELTAS_est + Onset_age + C(Gender) + Age + Education'
+    csf_ab42_model = ols(csf_ab42_formula, res).fit()
+    csf_ab42_table = statsmodels.stats.anova.anova_lm(csf_ab42_model, typ=2)
+
+    csf_tau_formula = 'CSF_Tau ~ BETAS_est + DELTAS_est + Onset_age + C(Gender) + Age + Education'
+    csf_tau_model = ols(csf_tau_formula, res).fit()
+    csf_tau_table = statsmodels.stats.anova.anova_lm(csf_tau_model, typ=2)
+
+    csf_ptau_formula = 'CSF_pTau ~ BETAS_est + DELTAS_est + Onset_age + C(Gender) + Age + Education'
+    csf_ptau_model = ols(csf_ptau_formula, res).fit()
+    csf_ptau_table = statsmodels.stats.anova.anova_lm(csf_ptau_model, typ=2)        
+            
+    anova_results = {'csf_ab42': {}, 'csf_tau': {}, 'csf_ptau': {}}
+    csf_types = ['csf_ab42', 'csf_tau', 'csf_ptau']
+    for i, tbl in enumerate([csf_ab42_table,csf_tau_table,csf_ptau_table]): 
+        csf_type = csf_types[i]
+        for j, x in enumerate(tbl[tbl.index != 'Residual'].index):
+            anova_results[csf_type][x] = {}
+            var_explained = np.round((tbl.loc[x, 'sum_sq'] / np.sum(tbl.loc[:, "sum_sq"])) * 100, 2)
+            p_value = tbl.loc[x, 'PR(>F)']
+            var_sig = str(var_explained) + " (" + format(p_value, '.02e') + "), F-value" + str(np.round(tbl.loc[x, 'F'], 3))
+            anova_results[csf_type][x]['var_explained'] = var_explained
+            anova_results[csf_type][x]['p_value'] = np.round(p_value,3)
+            anova_results[csf_type][x]['F_value'] = np.round(tbl.loc[x, 'F'], 3)
+
+    anova_barplot_df = pd.DataFrame(columns=["BETAS_est", "DELTAS_est", "Onset_age", "Age", "Education", "C(Gender)"], index=["CSF_AB42", "CSF_Tau", "CSF_pTau"])
+    ### build anova table 
+    csf_types = ["CSF_AB42", "CSF_Tau", "CSF_pTau"]
+    for i, tbl in enumerate([csf_ab42_table,csf_tau_table,csf_ptau_table]):
+        csf_type = csf_types[i]
+        for j, x in enumerate(anova_barplot_df.columns):
+            col = anova_barplot_df.columns[j]
+            var_explained = np.round((tbl.loc[x, 'sum_sq'] / np.sum(tbl.loc[:, "sum_sq"])) * 100, 2)
+            p_value = tbl.loc[x, 'PR(>F)']
+            anova_barplot_df.loc[csf_types[i], col] = var_explained
+
+    anova_barplot_df.loc[:, "CSF_Type"] = ["CSF_AB42", "CSF_Tau", "CSF_pTau"]
+    anova_barplot_df.columns = ["AB Production", "AB Clearance", "AB Onset Age", "Age", "Education", "Gender", "CSF Type"]
+    anova_barplot_df_melted = anova_barplot_df.melt(id_vars="CSF Type")
+
+    fig = plt.figure(figsize=(10,8))
+    ax1 = sns.barplot('CSF Type', "value", data=anova_barplot_df_melted, hue='variable', palette="Paired")
+    ax1.set_xticklabels(["CSF AB-42", "CSF Tau", "CSF P-Tau"])
+    plt.xticks(fontsize=24)
+    plt.ylim(0,15)
+    plt.xlabel("")
+    plt.yticks(fontsize=24)
+    plt.ylabel("Variance Explained", fontsize=24)
+    plt.title("% Variance Explained in CSF measures", fontsize=24)
+    plt.legend(fontsize='x-large', title_fontsize='32', loc='best')
+    plt.tight_layout() 
+    plt.savefig(os.path.join(output_dir, "anova_results.png"))
+    with open(os.path.join(output_dir, "anova_results.json"), "w") as f:
+        json.dump(anova_results, f, ensure_ascii=False)
+
+    for csf_type in ['csf_ab42','csf_tau', 'csf_ptau']: 
+        print(csf_type)
+        data = json.dumps(anova_results[csf_type])
+        df = pd.read_json(data)
+        print(df)
+
 def main(): 
     parser = ArgumentParser()
     parser.add_argument("filename",
                         help="Please pass base filename of ESM output file to analyze")
     parser.add_argument("dataset", 
                         help="Please specify whether the analysis is being done for DIAN or ADNI.")
+    parser.add_argument("--connectivity_type", 
+                        default="ACP",
+                        help="Please specify whether the connectivity type is ACP or FC")
     parser.add_argument("--scale", 
                         type=bool, 
                         default=False, 
@@ -311,6 +414,7 @@ def main():
     results = parser.parse_args()
     scale = results.scale
     dataset = results.dataset
+    conn_type = results.connectivity_type 
 
     if scale == True: 
         ref_pattern = "ref_pattern_orig"
@@ -365,16 +469,21 @@ def main():
     if dataset == "DIAN":
         genetic_df = pd.read_csv("../../data/DIAN/participant_metadata/GENETIC_D1801.csv")
         clinical_df = pd.read_csv("../../data/DIAN/participant_metadata/CLINICAL_D1801.csv")
+        biomarker_df = pd.read_csv("../../data/DIAN/participant_metadata/BIOMARKER_D1801.csv")
         res['mutation_type'] = get_mutation_type(res.index, genetic_df)
         res['DIAN_EYO'] = get_eyo(res.index, res.visit_label, clinical_df)
         ref_pattern_df['DIAN_EYO'] = res['DIAN_EYO']
         pred_pattern_df['DIAN_EYO'] = res['DIAN_EYO'] 
         res = get_clinical_status(res, clinical_df)
+        res = add_csf_biomarker_info(res, biomarker_df, clinical_df)
         ref_pattern_df.loc[:, 'Symptomatic'] = res.loc[:, 'Symptomatic']
         model_performance_summary(results.filename, ref_pattern_df, pred_pattern_df, roi_labels)
         plot_clinical_status_vs_esm_params(res, output_dir)
-        plot_effective_anat_dist_vs_ab(ref_pattern_df, acp_matrix, epicenters_idx, roi_labels, output_dir)
         plot_ref_vs_pred_group_brain(ref_pattern_df, pred_pattern_df, roi_labels, output_dir)
+        plot_anova_csf_results(res, output_dir)
+        if conn_type == "ACP":
+            plot_effective_anat_dist_vs_ab(ref_pattern_df, acp_matrix, epicenters_idx, roi_labels, output_dir)
+        
     if dataset == "ADNI": 
         clinical_mat = pd.read_csv("../../") 
 
@@ -394,11 +503,12 @@ def main():
     roi_performance_hist(ref_pattern_df, pred_pattern_df, roi_labels, output_dir)
     
     if dataset == "DIAN":
-        plot_aggregate_roi_performance_across_eyo(ref_pattern_df, 
-                                                  pred_pattern_df, 
-                                                  roi_labels, 
-                                                  output_dir)
+        # plot_aggregate_roi_performance_across_eyo(ref_pattern_df, 
+        #                                           pred_pattern_df, 
+        #                                           roi_labels, 
+        #                                           output_dir)
         plot_subject_performance(res, epicenter, dataset, output_dir)
+        plot_pup_ab_vs_r2(res, output_dir)
 
 if __name__ == "__main__":
     main()
