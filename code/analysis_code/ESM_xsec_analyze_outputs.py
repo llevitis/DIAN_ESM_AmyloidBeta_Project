@@ -380,7 +380,7 @@ def plot_anova_csf_results(res, output_dir):
     ax1 = sns.barplot('CSF Type', "value", data=anova_barplot_df_melted, hue='variable', palette="Paired")
     ax1.set_xticklabels(["CSF AB-42", "CSF Tau", "CSF P-Tau"])
     plt.xticks(fontsize=24)
-    plt.ylim(0,15)
+    plt.ylim(0,10)
     plt.xlabel("")
     plt.yticks(fontsize=24)
     plt.ylabel("Variance Explained", fontsize=24)
