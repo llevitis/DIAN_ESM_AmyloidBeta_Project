@@ -258,6 +258,9 @@ def plot_clinical_status_vs_esm_params(res, output_dir):
 def model_performance_summary(filename, ref_pattern_df, pred_pattern_df, roi_cols):
     ref_region = filename.split("ref-")[1].split("_")[0]
     epicenter = filename.split("epicenter-")[1].split("_")[0]
+    if epicenter.isnumeric():
+        i = int(epicenter) - 1
+        epicenter = roi_cols[i]
     global_r, global_p = stats.pearsonr(ref_pattern_df[roi_cols].mean(0), pred_pattern_df[roi_cols].mean(0))
     global_r2 = np.round(global_r ** 2,2)
     sub_r2 = [] 
@@ -406,6 +409,9 @@ def main():
     parser.add_argument("--connectivity_type", 
                         default="ACP",
                         help="Please specify whether the connectivity type is ACP or FC")
+    parser.add_argument("--plot", 
+                        default=True,
+                        help="Should figures associated with this output be created?")
     parser.add_argument("--scale", 
                         type=bool, 
                         default=False, 
@@ -414,7 +420,8 @@ def main():
     results = parser.parse_args()
     scale = results.scale
     dataset = results.dataset
-    conn_type = results.connectivity_type 
+    conn_type = results.connectivity_type
+    plot = results.plot 
 
     if scale == True: 
         ref_pattern = "ref_pattern_orig"
@@ -478,11 +485,12 @@ def main():
         res = add_csf_biomarker_info(res, biomarker_df, clinical_df)
         ref_pattern_df.loc[:, 'Symptomatic'] = res.loc[:, 'Symptomatic']
         model_performance_summary(results.filename, ref_pattern_df, pred_pattern_df, roi_labels)
-        plot_clinical_status_vs_esm_params(res, output_dir)
-        plot_ref_vs_pred_group_brain(ref_pattern_df, pred_pattern_df, roi_labels, output_dir)
-        plot_anova_csf_results(res, output_dir)
-        if conn_type == "ACP":
-            plot_effective_anat_dist_vs_ab(ref_pattern_df, acp_matrix, epicenters_idx, roi_labels, output_dir)
+        if plot == True:
+            plot_clinical_status_vs_esm_params(res, output_dir)
+            plot_ref_vs_pred_group_brain(ref_pattern_df, pred_pattern_df, roi_labels, output_dir)
+            plot_anova_csf_results(res, output_dir)
+            if conn_type == "ACP":
+                plot_effective_anat_dist_vs_ab(ref_pattern_df, acp_matrix, epicenters_idx, roi_labels, output_dir)
         
     if dataset == "ADNI": 
         clinical_mat = pd.read_csv("../../") 
@@ -503,12 +511,13 @@ def main():
     roi_performance_hist(ref_pattern_df, pred_pattern_df, roi_labels, output_dir)
     
     if dataset == "DIAN":
-        # plot_aggregate_roi_performance_across_eyo(ref_pattern_df, 
-        #                                           pred_pattern_df, 
-        #                                           roi_labels, 
-        #                                           output_dir)
-        plot_subject_performance(res, epicenter, dataset, output_dir)
-        plot_pup_ab_vs_r2(res, output_dir)
+        if plot==True:
+            plot_aggregate_roi_performance_across_eyo(ref_pattern_df, 
+                                                    pred_pattern_df, 
+                                                    roi_labels, 
+                                                    output_dir)
+            plot_subject_performance(res, epicenter, dataset, output_dir)
+            plot_pup_ab_vs_r2(res, output_dir)
 
 if __name__ == "__main__":
     main()
