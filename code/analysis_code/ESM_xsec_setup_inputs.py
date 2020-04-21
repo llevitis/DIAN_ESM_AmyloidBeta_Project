@@ -151,31 +151,51 @@ def plot_roi_sub_heatmap(ab_prob_df, roi_cols):
     esm.Plot_Probabilites(ab_prob_df[roi_cols], cmap="Spectral_r", figsize=(20,10), path=path)
 
 
-def main():
+def main(args):
     parser = ArgumentParser()
     parser.add_argument("--ab_prob_matrix_dir",
                         help="Please pass the files directory containing the PiB-PET probability matrices")
     parser.add_argument("--esm_input_file",
                         help="Please provide desired ESM input filename.")
     parser.add_argument("--connectivity_type",
-                        help="Specify type of connectivity, e.g. FC or ACP")
-    parser.add_argument("--scale", 
-                        type=bool,
-                        default=False,
-                        help="Should the amyloid beta probabilities undergo within ROI sigmoid normalization.")
+                        help="Specify type of connectivity, e.g. FC or ACP",
+                        default="ACP")
     parser.add_argument("--epicenters_for_esm",
                         help="Please provide a list of regions to test as \
                               epicenters (all lower-case)",
                         nargs="+",
                         type=str,
                         default=None)
-    results = parser.parse_args()
+    parser.add_argument("--zscore",
+                        help="Should the amyloid beta probabilities be z-scored.",
+                        default=False,
+                        type=bool) 
+    parser.add_argument("--threshold",
+                        help="Should the amyloid beta probabilities be thresholded.",
+                        default=False,
+                        type=bool)
+    parser.add_argument("--scale", 
+                        type=bool,
+                        default=False,
+                        help="Should the amyloid beta probabilities be within ROI sigmoid normalized.")
+    parser.add_argument("--visitNumber",
+                        default=1)
+    results = parser.parse_args() if args is None else parser.parse_args(args)
+    #results = parser.parse_args(args)
 
     ab_prob_matrix_dir = results.ab_prob_matrix_dir
     esm_input_file = results.esm_input_file
     connectivity_type = results.connectivity_type
     epicenters_for_esm = results.epicenters_for_esm
+    zscore = results.zscore
     scale = results.scale
+    threshold = results.threshold
+    visitNumber = results.visitNumber
+
+    if connectivity_type == "ACP": 
+        conn_file = '../../data/DIAN/connectivity_matrices/Matrix_ACP.mat'
+    elif connectivity_type == "FC":
+        conn_file = '../../data/DIAN/connectivity_matrices/DIAN_FC_NC_Correlation_Matrix_Avg_ReducedConfounds.mat' 
 
     if scale == True: 
         esm_input_file = esm_input_file + "_scaled"
@@ -199,7 +219,7 @@ def main():
             print(roi)
             epicenters_idx.append(i+1)
 
-    stripplot_subcortical_mc_nc(ab_prob_all_visits_df)
+    #stripplot_subcortical_mc_nc(ab_prob_all_visits_df)
     
     # extract df for subjects' first timepoint for both mutation carriers and noncarriers  
     # For each region, create a null distribution from noncarriers' signal 
@@ -207,35 +227,43 @@ def main():
     # Take the absolute value of this z-score 
     # Normalize to 0-1
     ab_prob_mc = ab_prob_all_visits_df[ab_prob_all_visits_df.Mutation == 1]
+    ab_prob_t1_mc = ab_prob_mc[ab_prob_mc.visitNumber == visitNumber]
     ab_prob_nc = ab_prob_all_visits_df[ab_prob_all_visits_df.Mutation == 0]
 
-    ab_prob_mc_zscore = ab_prob_mc.copy()
-    ab_prob_mc_zscore = zscore_mc_nc(ab_prob_mc, ab_prob_nc, roi_cols_to_keep)
+    if zscore == True:
+        ab_prob_mc_zscore = ab_prob_mc.copy()
+        ab_prob_mc_zscore = zscore_mc_nc(ab_prob_mc, ab_prob_nc, roi_cols_to_keep)
+        ab_prob_t1_mc_zscore = ab_prob_mc_zscore[ab_prob_mc_zscore.visitNumber == visitNumber]
 
-    ab_prob_t1_mc_zscore = ab_prob_mc_zscore[ab_prob_mc_zscore.visitNumber == 1]
-
-    plot_roi_sub_heatmap(ab_prob_t1_mc_zscore, roi_cols)
-
-    ab_prob_t1_mc_zscore_sigmoid = ab_prob_t1_mc_zscore.copy()
     if scale == True: 
+        ab_prob_t1_mc_zscore_sigmoid = ab_prob_t1_mc_zscore.copy()
         ab_prob_t1_mc_zscore_sigmoid[roi_cols_to_keep] = sigmoid_normalization(ab_prob_t1_mc_zscore[roi_cols_to_keep]) 
+    if threshold == True:
+        ab_prob_t1_mc_zscore_threshold = ab_prob_t1_mc_zscore.copy()
+        for col in roi_cols:
+            ab_prob_t1_mc_zscore_threshold[col].values[ab_prob_t1_mc_zscore_threshold[col] < 0.15] = 0
 
     # prepare inputs for ESM 
     output_dir = '../../data/DIAN/esm_input_mat_files/'
-    conn_matrices = ['../../data/DIAN/connectivity_matrices/Matrix_ACP.mat', '../../data/DIAN/connectivity_matrices/Matrix_LONG.mat']
+    conn_matrices = [conn_file, '../../data/DIAN/connectivity_matrices/Matrix_LONG.mat']
     conn_mat_names = ['Map', 'Map']
     conn_out_names = ['ACP', 'LONG']
     file_names = esm_input_file + '.mat'
-    ages = list(ab_prob_t1_mc_zscore.loc[:, 'VISITAGEc'])
-    sub_ids = list(ab_prob_t1_mc_zscore.index)
-    visit_labels = list(ab_prob_t1_mc_zscore.loc[:, 'visit'])
+    ages = list(ab_prob_t1_mc.loc[:, 'VISITAGEc'])
+    sub_ids = list(ab_prob_t1_mc.index)
+    visit_labels = list(ab_prob_t1_mc.loc[:, 'visit'])
 
     # specify whether sigmoid normalized data is used as the test data. always include the un-normalized data.
 
+    plot_roi_sub_heatmap(ab_prob_t1_mc_zscore, roi_cols)
     if scale == True: 
         prob_matrices = {'test_data': ab_prob_t1_mc_zscore_sigmoid.loc[:, roi_cols], 'orig_data': ab_prob_t1_mc_zscore.loc[:, roi_cols]}
-    else: 
+    elif threshold == True: 
+        prob_matrices = {'test_data': ab_prob_t1_mc_zscore_threshold.loc[:, roi_cols], 'orig_data': ab_prob_t1_mc_zscore_threshold.loc[:, roi_cols]}
+    elif zscore == True: 
         prob_matrices = {'test_data': ab_prob_t1_mc_zscore.loc[:, roi_cols], 'orig_data': ab_prob_t1_mc_zscore.loc[:, roi_cols]}
+    else: 
+        prob_matrices = {'test_data': ab_prob_t1_mc.loc[:, roi_cols], 'orig_data': ab_prob_t1_mc.loc[:, roi_cols]}
 
     esm.Prepare_Inputs_for_ESM(prob_matrices, 
                                ages, 
@@ -251,4 +279,4 @@ def main():
                                figure=False)
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
