@@ -179,11 +179,13 @@ def main(args):
                         default=False,
                         help="Should the amyloid beta probabilities be within ROI sigmoid normalized.")
     parser.add_argument("--visitNumber",
-                        default=1)
+                        default=1,
+                        type=int)
     results = parser.parse_args() if args is None else parser.parse_args(args)
     #results = parser.parse_args(args)
 
     ab_prob_matrix_dir = results.ab_prob_matrix_dir
+    print(ab_prob_matrix_dir)
     esm_input_file = results.esm_input_file
     connectivity_type = results.connectivity_type
     epicenters_for_esm = results.epicenters_for_esm
