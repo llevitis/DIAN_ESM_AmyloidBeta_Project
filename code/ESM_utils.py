@@ -668,7 +668,7 @@ def Evaluate_Model(roi, models, bins=None):
         plt.show()
 
 def Plot_Probabilites(prob_matrix, col_order = [], ind_order = [], 
-					  vmin=None, vmax=None, figsize=(), cmap=None, ax=None):
+					  vmin=None, vmax=None, figsize=(), cmap=None, ax=None, path=None):
     '''
     Given the output matrix of Convert_ROI_values_to_Probabilities, will plot
     a heatmap of all probability values sorted in such a manner to demonstrate
@@ -701,8 +701,10 @@ def Plot_Probabilites(prob_matrix, col_order = [], ind_order = [],
     g = sns.heatmap(forplot, vmin, vmax, cmap=cmap, ax=ax)
     plt.xlabel('Regions (highest - lowest p)', fontsize=24)
     plt.ylabel('Subjects (lowest - highest p)', fontsize=24)
-    plt.show()
-    
+    if path != None: 
+        plt.yticks([])
+        plt.tight_layout()
+        plt.savefig(path)
     return [ind_order,col_order]
 
 
