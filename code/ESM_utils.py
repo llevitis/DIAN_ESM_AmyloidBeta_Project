@@ -1856,3 +1856,77 @@ def create_connectome_from_1d(cx, method, symmetric):
                 weight_cx = weight_cx + rotator
     
     return weight_cx
+
+def plot_best_epicenter_x_subs(output_files, subs_to_select=None, color="blue",title=None, plot=True, dataset="DIAN"):
+    output_files = sorted(output_files)
+    example_output = esm.loadmat(output_files[0])
+    visit_labels = example_output['visit_labels']
+    if dataset == "DIAN": 
+        rois = list(x.rstrip()[5:] for x in example_output['roi_labels'][0:38])
+    elif dataset == "ADNI":
+        rois = list(x.rstrip()[5:] for x in example_output['roi_labels'][0:39])
+    pup_rois = ["precuneus", "superior frontal", "rostral middle frontal", "lateral orbitofrontal", "medial orbitofrontal",
+               "superior temporal", "middle temporal"]
+    composite_roi_list = []
+    for i,roi in enumerate(example_output['roi_labels']): 
+        for roi2 in pup_rois: 
+            if roi2 in roi.lower():
+                composite_roi_list.append(i)
+    subs = list(esm.loadmat(output_files[0])['sub_ids'])
+    sub_epicenter_df = pd.DataFrame(columns=rois, index=subs)
+    sub_epicenter_df.loc[:, 'visit_label'] = visit_labels
+    all_rois = []
+    for i,f in enumerate(output_files): 
+        mat = esm.loadmat(f)
+        ref_pattern = mat['ref_pattern']
+        pred_pattern = mat['model_solutions0']
+        if dataset == "DIAN":
+            epicenter_idx = output_files[i].split("/")[-1].split("_")[8].split("-")[1]
+        elif dataset == "ADNI":
+            epicenter_idx = output_files[i].split("/")[-1].split("_")[2].split("-")[1]
+        if epicenter_idx.isdigit():
+            epicenter_name = rois[int(epicenter_idx)-1]
+        else:
+            epicenter_name = epicenter_idx
+        all_rois.append(epicenter_name)
+        for i, sub in enumerate(sub_epicenter_df.index): 
+            r,p = stats.pearsonr(ref_pattern[:,i], pred_pattern[:,i])
+            r2 = r**2
+            sub_epicenter_df.loc[sub, epicenter_name] = r2
+            sub_epicenter_df.loc[sub, 'esm_idx'] = i
+    for i,sub in enumerate(sub_epicenter_df.index): 
+        visit = sub_epicenter_df.loc[sub, "visit_label"]
+        sub_epicenter_df.loc[sub, "AB_Composite"] = np.mean(ref_pattern[composite_roi_list,i])
+        if dataset == "DIAN":
+            sub_epicenter_df.loc[sub, "DIAN_EYO"] = clinical_df[(clinical_df.IMAGID == sub) & (clinical_df.visit == visit)].DIAN_EYO.values[0]
+            ab_composite_bs = pib_df[(pib_df.IMAGID == sub) & (pib_df.visit == visit)].PIB_fSUVR_TOT_CORTMEAN.values[0] / pib_df[(pib_df.IMAGID == sub) & (pib_df.visit == visit)].PIB_fSUVR_TOT_BRAINSTEM.values[0]
+            sub_epicenter_df.loc[sub, 'AB_COMPOSITE_SUVR_BS'] = ab_composite_bs
+            if sub_epicenter_df.loc[sub, "AB_Composite"] > 0.1:
+                sub_epicenter_df.loc[sub, "AB_Positive"] = True
+            else:
+                sub_epicenter_df.loc[sub, "AB_Positive"] = False
+            if sub_epicenter_df.loc[sub, "AB_COMPOSITE_SUVR_BS"] > 0.79:
+                sub_epicenter_df.loc[sub, "AB_POSITIVE_SUVR"] = True
+            else:
+                sub_epicenter_df.loc[sub, "AB_POSITIVE_SUVR"] = False
+    for sub in sub_epicenter_df.index: 
+        epicenter_vals = list(sub_epicenter_df.loc[sub, all_rois])
+        idx = epicenter_vals.index(max(epicenter_vals))
+        roi = all_rois[idx]
+        sub_epicenter_df.loc[sub, "Best_Epicenter"] = roi
+        sub_epicenter_df.loc[sub, "Best_Epicenter_R2"] = sub_epicenter_df.loc[sub, roi]
+    if subs_to_select != None:
+        subs = subs_to_select
+    if plot == True:
+        plt.figure(figsize=(20,10))
+        g = sns.countplot(sub_epicenter_df.loc[subs, "Best_Epicenter"],
+                          color=color,
+                          order = sub_epicenter_df.loc[subs, "Best_Epicenter"].value_counts().index)
+        g.set_xticklabels(g.get_xticklabels(), rotation=45, horizontalalignment='right',fontsize=16)
+        g.set_title(title, fontsize=20)
+        g.set_xlabel("Epicenter", fontsize=20)
+        g.set_ylabel("Count", fontsize=20)
+        g.set_yticklabels(g.get_yticks(), fontsize=16)
+        plt.show()
+        plt.close()
+    return sub_epicenter_df
