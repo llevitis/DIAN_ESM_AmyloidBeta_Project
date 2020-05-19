@@ -1858,8 +1858,12 @@ def create_connectome_from_1d(cx, method, symmetric):
     return weight_cx
 
 def plot_best_epicenter_x_subs(output_files, subs_to_select=None, color="blue",title=None, plot=True, dataset="DIAN"):
+    clinical_df = pandas.read_csv("../../data/DIAN/participant_metadata/CLINICAL_D1801.csv")
+    pib_df = pandas.read_csv("../../data/DIAN/participant_metadata/pib_D1801.csv")
+    genetic_df = pandas.read_csv("../../data/DIAN/participant_metadata/GENETIC_D1801.csv")
     output_files = sorted(output_files)
-    example_output = esm.loadmat(output_files[0])
+    example_output = loadmat(output_files[0])
+    subs = list(example_output['sub_ids'])
     visit_labels = example_output['visit_labels']
     if dataset == "DIAN": 
         rois = list(x.rstrip()[5:] for x in example_output['roi_labels'][0:38])
@@ -1872,12 +1876,11 @@ def plot_best_epicenter_x_subs(output_files, subs_to_select=None, color="blue",t
         for roi2 in pup_rois: 
             if roi2 in roi.lower():
                 composite_roi_list.append(i)
-    subs = list(esm.loadmat(output_files[0])['sub_ids'])
-    sub_epicenter_df = pd.DataFrame(columns=rois, index=subs)
+    sub_epicenter_df = pandas.DataFrame(columns=rois, index=subs)
     sub_epicenter_df.loc[:, 'visit_label'] = visit_labels
     all_rois = []
     for i,f in enumerate(output_files): 
-        mat = esm.loadmat(f)
+        mat = loadmat(f)
         ref_pattern = mat['ref_pattern']
         pred_pattern = mat['model_solutions0']
         if dataset == "DIAN":
@@ -1909,12 +1912,20 @@ def plot_best_epicenter_x_subs(output_files, subs_to_select=None, color="blue",t
                 sub_epicenter_df.loc[sub, "AB_POSITIVE_SUVR"] = True
             else:
                 sub_epicenter_df.loc[sub, "AB_POSITIVE_SUVR"] = False
+            sub_epicenter_df.loc[sub, 'mut_type'] = genetic_df[genetic_df.IMAGID == sub].MUTATIONTYPE.values[0]
+            sub_epicenter_df.loc[sub, 'CDR'] = clinical_df[(clinical_df.IMAGID == sub) & (clinical_df.visit == visit)].cdrglob.values[0]
     for sub in sub_epicenter_df.index: 
         epicenter_vals = list(sub_epicenter_df.loc[sub, all_rois])
+        esm_idx = int(sub_epicenter_df.loc[sub, 'esm_idx'])
+        print(esm_idx)
         idx = epicenter_vals.index(max(epicenter_vals))
         roi = all_rois[idx]
         sub_epicenter_df.loc[sub, "Best_Epicenter"] = roi
         sub_epicenter_df.loc[sub, "Best_Epicenter_R2"] = sub_epicenter_df.loc[sub, roi]
+        best_exp = loadmat(output_files[idx])
+        sub_epicenter_df.loc[sub, "BETAS_est"] = list(best_exp['BETAS_est'])[esm_idx]
+        sub_epicenter_df.loc[sub, "DELTAS_est"] = list(best_exp['DELTAS_est'])[esm_idx]
+        
     if subs_to_select != None:
         subs = subs_to_select
     if plot == True:
