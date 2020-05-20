@@ -1957,9 +1957,6 @@ def group_level_performance(output_files, subs_to_select=None, dataset="DIAN"):
         rois = list(x.rstrip()[5:] for x in example_output['roi_labels'][0:38])
     elif dataset == "ADNI":
         rois = list(x.rstrip()[5:] for x in example_output['roi_labels'][0:39])
-    pup_rois = ["precuneus", "superior frontal", "rostral middle frontal", "lateral orbitofrontal", "medial orbitofrontal",
-               "superior temporal", "middle temporal"]
-    composite_roi_list = []
     subs = list(example_output['sub_ids'].flatten())
     for i,roi in enumerate(example_output['roi_labels']): 
         for roi2 in pup_rois: 
