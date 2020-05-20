@@ -5,6 +5,7 @@ import nibabel as ni
 import itertools
 from glob import glob
 import statsmodels.distributions.empirical_distribution as ed
+import statsmodels.formula.api as smf
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
@@ -1913,11 +1914,16 @@ def plot_best_epicenter_x_subs(output_files, subs_to_select=None, color="blue",t
             else:
                 sub_epicenter_df.loc[sub, "AB_POSITIVE_SUVR"] = False
             sub_epicenter_df.loc[sub, 'mut_type'] = genetic_df[genetic_df.IMAGID == sub].MUTATIONTYPE.values[0]
+            if sub_epicenter_df.loc[sub, 'mut_type'] == 1: 
+                sub_epicenter_df.loc[sub, 'mut_type_name'] = "PSEN1"
+            elif sub_epicenter_df.loc[sub, 'mut_type'] == 2: 
+                sub_epicenter_df.loc[sub, 'mut_type_name'] = "PSEN2"
+            else:
+                sub_epicenter_df.loc[sub, 'mut_type_name'] = "APP"
             sub_epicenter_df.loc[sub, 'CDR'] = clinical_df[(clinical_df.IMAGID == sub) & (clinical_df.visit == visit)].cdrglob.values[0]
     for sub in sub_epicenter_df.index: 
         epicenter_vals = list(sub_epicenter_df.loc[sub, all_rois])
         esm_idx = int(sub_epicenter_df.loc[sub, 'esm_idx'])
-        print(esm_idx)
         idx = epicenter_vals.index(max(epicenter_vals))
         roi = all_rois[idx]
         sub_epicenter_df.loc[sub, "Best_Epicenter"] = roi
@@ -1941,3 +1947,47 @@ def plot_best_epicenter_x_subs(output_files, subs_to_select=None, color="blue",t
         plt.show()
         plt.close()
     return sub_epicenter_df
+
+
+def group_level_performance(output_files, subs_to_select=None, dataset="DIAN"):
+    output_files = sorted(output_files)
+    example_output = loadmat(output_files[0])
+    visit_labels = example_output['visit_labels']
+    if dataset == "DIAN":  
+        rois = list(x.rstrip()[5:] for x in example_output['roi_labels'][0:38])
+    elif dataset == "ADNI":
+        rois = list(x.rstrip()[5:] for x in example_output['roi_labels'][0:39])
+    pup_rois = ["precuneus", "superior frontal", "rostral middle frontal", "lateral orbitofrontal", "medial orbitofrontal",
+               "superior temporal", "middle temporal"]
+    composite_roi_list = []
+    subs = list(example_output['sub_ids'].flatten())
+    for i,roi in enumerate(example_output['roi_labels']): 
+        for roi2 in pup_rois: 
+            if roi2 in roi.lower():
+                composite_roi_list.append(i)
+    global_performance_dict = {}
+    if dataset == "DIAN":
+        num_files = 38 
+    elif dataset == "ADNI":
+        num_files = 39
+    for i,f in enumerate(output_files[0:num_files]): 
+        mat = loadmat(f)
+        ref_pattern_df = pandas.DataFrame(index=subs, columns=example_output['roi_labels'])
+        ref_pattern_df.loc[:,:] = mat['ref_pattern'].transpose()
+        pred_pattern_df = pandas.DataFrame(index=subs, columns=example_output['roi_labels'])
+        pred_pattern_df.loc[:,:] = mat['model_solutions0'].transpose()
+        if dataset == "DIAN":
+            epicenter_idx = output_files[i].split("/")[-1].split("_")[8].split("-")[1]
+        elif dataset == "ADNI":
+            epicenter_idx = output_files[i].split("/")[-1].split("_")[2].split("-")[1]
+        if epicenter_idx.isdigit():
+            epicenter_name = rois[int(epicenter_idx)-1]
+        else:
+            epicenter_name = epicenter_idx
+        if subs_to_select == None:
+            subs_to_select = subs
+        r,p = stats.pearsonr(ref_pattern_df.loc[subs_to_select, :].mean(0), pred_pattern_df.loc[subs,:].mean(0))
+        r2 = r ** 2
+        global_performance_dict[epicenter_name] = r2
+    return global_performance_dict
+    
