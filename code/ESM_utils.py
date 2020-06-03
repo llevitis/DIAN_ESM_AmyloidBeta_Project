@@ -8,6 +8,7 @@ import statsmodels.distributions.empirical_distribution as ed
 import statsmodels.formula.api as smf
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.express as px
 from scipy import stats
 from scipy.io import savemat,loadmat
 from nilearn import input_data, image
@@ -1958,10 +1959,10 @@ def group_level_performance(output_files, subs_to_select=None, dataset="DIAN"):
     elif dataset == "ADNI":
         rois = list(x.rstrip()[5:] for x in example_output['roi_labels'][0:39])
     subs = list(example_output['sub_ids'].flatten())
-    for i,roi in enumerate(example_output['roi_labels']): 
-        for roi2 in pup_rois: 
-            if roi2 in roi.lower():
-                composite_roi_list.append(i)
+    # for i,roi in enumerate(example_output['roi_labels']): 
+    #     for roi2 in pup_rois: 
+    #         if roi2 in roi.lower():
+    #             composite_roi_list.append(i)
     global_performance_dict = {}
     if dataset == "DIAN":
         num_files = 38 
@@ -1988,3 +1989,34 @@ def group_level_performance(output_files, subs_to_select=None, dataset="DIAN"):
         global_performance_dict[epicenter_name] = r2
     return global_performance_dict
     
+def plot_epicenter_frequency(df, positivity_colname, filename): 
+    fig = px.histogram(df, x="Best_Epicenter", y="Best_Epicenter", color=positivity_colname)
+    fig.update_layout(
+        barmode='stack', 
+        xaxis={'categoryorder': 'total descending'},
+        title={
+            'text':"Epicenter Frequency Across All Subjects",
+            'y':0.9,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        },
+        xaxis_title="Epicenter",
+        yaxis_title="Frequency",
+        uniformtext_minsize=16, xaxis_showgrid=False, yaxis_showgrid=False,
+                    plot_bgcolor="white",
+        legend_title = "A" + u"\u03b2" + " Positive",
+        legend=dict(
+            x=.8,
+            y=1,
+            traceorder="normal",
+            bgcolor="White",
+            borderwidth=1
+        )
+    )
+    fig.update_xaxes(showline=True, linewidth=2, linecolor='black')
+    fig.update_yaxes(showline=True, linewidth=2, linecolor='black')
+
+    fig.update_layout(width=1000, height=600)
+    fig.write_image(os.path.join("../../figures", filename))
+
