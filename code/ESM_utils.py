@@ -2023,6 +2023,12 @@ def plot_epicenter_frequency(df, positivity_colname, filepath):
 def whole_brain_epicenter_group_differences(df, roi_labels, epicenter_group_columns): 
     ''' This is a function that computes group differences across different groups (
     in this case, with respect to the best epicenter subgroup). 
+     
+    df = pandas dataframe 
+    roi_labels = list of region names to use 
+    epicenter_group_columns = dummy one hot encoded columns corresponding to each epicenter subgroup
+
+
     '''
     results = pd.DataFrame(index=roi_labels)
     for region in roi_labels:
