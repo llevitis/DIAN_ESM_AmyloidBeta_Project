@@ -2019,3 +2019,21 @@ def plot_epicenter_frequency(df, positivity_colname, filepath):
 
     fig.update_layout(width=1000, height=600)
     fig.write_image(filepath)
+
+def whole_brain_epicenter_group_differences(df, roi_labels, epicenter_group_columns): 
+    ''' This is a function that computes group differences across different groups (
+    in this case, with respect to the best epicenter subgroup). 
+    '''
+    results = pd.DataFrame(index=roi_labels)
+    for region in roi_labels:
+        for col in epicenter_group_columns:
+            fitmod = smf.ols("Q('{0}') ~ C({1}) + Age".format(region,col),
+                            data=df.fit()
+            t = fitmod.tvalues[1]
+            p = fitmod.pvalues[1]
+            results.loc[region,'%s_p'%col] = p
+            results.loc[region,'%s_t'%col] = t
+    for col in egp_cols:
+        fdrs = multipletests(results['%s_p'%col].values,method='fdr_bh')
+        results.loc[:,'%s_FDR'%col] = fdrs[1]
+    return results
