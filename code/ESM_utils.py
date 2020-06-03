@@ -1989,7 +1989,7 @@ def group_level_performance(output_files, subs_to_select=None, dataset="DIAN"):
         global_performance_dict[epicenter_name] = r2
     return global_performance_dict
     
-def plot_epicenter_frequency(df, positivity_colname, filename): 
+def plot_epicenter_frequency(df, positivity_colname, filepath): 
     fig = px.histogram(df, x="Best_Epicenter", y="Best_Epicenter", color=positivity_colname)
     fig.update_layout(
         barmode='stack', 
@@ -2018,5 +2018,4 @@ def plot_epicenter_frequency(df, positivity_colname, filename):
     fig.update_yaxes(showline=True, linewidth=2, linecolor='black')
 
     fig.update_layout(width=1000, height=600)
-    fig.write_image(os.path.join("../../figures", filename))
-
+    fig.write_image(filepath)
