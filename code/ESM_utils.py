@@ -2034,7 +2034,7 @@ def whole_brain_epicenter_group_differences(df, roi_labels, epicenter_group_colu
     for region in roi_labels:
         for col in epicenter_group_columns:
             fitmod = smf.ols("Q('{0}') ~ C({1}) + Age".format(region,col),
-                            data=df.fit()
+                            data=df.fit())
             t = fitmod.tvalues[1]
             p = fitmod.pvalues[1]
             results.loc[region,'%s_p'%col] = p
