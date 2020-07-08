@@ -185,7 +185,7 @@ def plot_t1_t2_relationship(esm_res,output_dir):
 # Set accumulation status.
 def set_acc_status(esm_res): 
     for sub in esm_res.index: 
-        if esm_res.loc[sub, 'Ref_PUP_ROI_Delta'] > 0: 
+        if esm_res.loc[sub, 'Ref_PUP_ROI_Delta'] > 0.05: 
             esm_res.loc[sub, 'Accumulator'] = "Yes"
         else: 
             esm_res.loc[sub, 'Accumulator'] = "No"
@@ -257,6 +257,11 @@ def regplot_params_vs_delta(esm_res, output_dir):
     plt.savefig(os.path.join(output_dir, "regplot_params_vs_delta.png"))
     plt.close()
 
+def plot_validation_results_acc_status(esm_validation_res, output_dir): 
+    plt.figure(figsize=(5,5))
+    sns.boxplot(x="t1-t3_acc_status", y="r2_delta", data=esm_validation_res)
+    plt.savefig(os.path.join(output_dir, "longi_validation_r2_delta_distplot.png"))
+
 def main(): 
     parser = ArgumentParser()
     parser.add_argument("filename",
@@ -316,6 +321,8 @@ def main():
     esm_res.loc[:, 'DIAN_EYO_t1'] = v1_ref_pattern_df.loc[:, 'DIAN_EYO']
     esm_res.loc[:, 'BETAS_est'] = list(esm_output['BETAS_est'].flatten())
     esm_res.loc[:, 'DELTAS_est'] = list(esm_output['DELTAS_est'].flatten())
+    esm_res.loc[:, 'BETAS0_est'] = list(esm_output['BETAS0_est'].flatten())
+    esm_res.loc[:, 'DELTAS0_est'] = list(esm_output['DELTAS0_est'].flatten())
 
 
     for sub in esm_res.index: 
@@ -369,11 +376,10 @@ def main():
     ab_prob_nc = ab_prob_all_visits_df[ab_prob_all_visits_df.Mutation == 0]
 
     ab_prob_mc_zscore = ab_prob_mc.copy()
-    ab_prob_mc_zscore = ESM_xsec_setup_inputs.zscore_mc_nc(ab_prob_mc, ab_prob_nc, roi_cols_to_keep)
+    ab_prob_mc_zscore = ESM_xsec_setup_inputs.zscore_mc_nc(ab_prob_mc, ab_prob_nc, roi_labels_to_keep)
 
     ab_prob_t2_mc_zscore = ab_prob_mc_zscore[ab_prob_mc_zscore.visitNumber == 2]
     ab_prob_t3_mc_zscore = ab_prob_mc_zscore[ab_prob_mc_zscore.visitNumber == 3]
-
 
     # prepare inputs for ESM 
     output_dir = '../../data/DIAN/esm_input_mat_files/'
@@ -387,8 +393,8 @@ def main():
                      'v3': ab_prob_t3_mc_zscore.loc[common_subs_v3, roi_labels]}
     visit_labels = {'visit_v2': list(ab_prob_t2_mc_zscore.loc[common_subs_v3, 'visit']),
                     'visit_v3': list(ab_prob_t3_mc_zscore.loc[common_subs_v3, 'visit'])}  
-    betas0_est = list(esm_output['BETAS0_est'].flatten())  
-    deltas0_est = list(esm_output['DELTAS0_est'].flatten())
+    betas0_est = list(esm_res.loc[common_subs_v3, 'BETAS0_est'])  
+    deltas0_est = list(esm_res.loc[common_subs_v3, 'DELTAS0_est'])
     epicenters_idx = [x-1 for x in list(esm_output['seed_regions_1'][0])]
 
     esm.Prepare_Inputs_for_ESM(prob_matrices, 
@@ -406,7 +412,7 @@ def main():
                                betas0=betas0_est, 
                                deltas0=deltas0_est)
 
-    # figure out how to run the esm longi validation script from here
+    #figure out how to run the esm longi validation script from here
 
     longi_validation_file = glob.glob("../../data/DIAN/esm_output_mat_files/longi/" + "_".join(results.filename.split("_")[:-1])  + '_validation*.mat')[0]
     longi_validation_mat = esm.loadmat(longi_validation_file)
@@ -432,7 +438,7 @@ def main():
         df['visit_label'] = list(ab_prob_t3_mc_zscore.loc[common_subs_v3, 'visit'])
         df['DIAN_EYO'] = ESM_xsec_analyze_outputs.get_eyo(df.index, df.visit_label, clinical_df)
 
-    group_validation_r,p = stats.pearsonr(v3_ref_pattern_df.mean(1), v3_pred_pattern_df.mean(1))
+    group_validation_r,p = stats.pearsonr(v3_ref_pattern_df.mean(0), v3_pred_pattern_df.mean(0))
     print("validation group r2: {0}".format(np.round(group_validation_r ** 2), 2)) 
 
     esm_validation_res.loc[:, 'Ref_PUP_ROI_Delta'] = get_pup_roi_delta(v2_ref_pattern_df.loc[common_subs_v3,:] ,
@@ -448,9 +454,9 @@ def main():
         esm_validation_res.loc[sub, 'pup_roi_ref_t3'] = np.mean(v3_ref_pattern_df.loc[sub, pup_rois])
         esm_validation_res.loc[sub, 'pup_roi_pred_t3'] = np.mean(v3_pred_pattern_df.loc[sub, pup_rois])
         eyo_diff = esm_validation_res.loc[sub, 'age_t3'] - esm_validation_res.loc[sub, 'age_t2']
-        ref_delta_all_rois = (v3_ref_pattern_df.loc[sub, roi_labels_esm_output] - v2_ref_pattern_df.loc[sub, roi_labels_esm_output])/eyo_diff
-        pred_delta_all_rois = (v3_pred_pattern_df.loc[sub, roi_labels_esm_output] - v2_ref_pattern_df.loc[sub, roi_labels_esm_output])/eyo_diff
-        r,p = stats.pearsonr(ref_delta_all_rois, pred_delta_all_rois)
+        ref_delta_pup_rois = (v3_ref_pattern_df.loc[sub, pup_rois] - v2_ref_pattern_df.loc[sub, pup_rois])/eyo_diff
+        pred_delta_pup_rois = (v3_pred_pattern_df.loc[sub, pup_rois] - v2_ref_pattern_df.loc[sub, pup_rois])/eyo_diff
+        r,p = stats.pearsonr(ref_delta_pup_rois, pred_delta_pup_rois)
         r2 = r ** 2 
         esm_validation_res.loc[sub, 'r2_delta'] = r2
         esm_validation_res.loc[sub, 'T1-T2_Delta'] = esm_res.loc[sub, 'Ref_PUP_ROI_Delta']
@@ -464,9 +470,15 @@ def main():
         else: 
             esm_validation_res.loc[sub, 't1-t3_acc_status'] = "NA-NA"
 
-    pdb.set_trace()
-    sns.boxplot(x="t1-t3_acc_status", y="r2_delta", data=esm_validation_res) 
-    plt.show()
+    
+
+    print("avg r2: {0}".format(np.mean(esm_validation_res.r2_delta)))
+    print("avg r2 for A-A: {0}".format(np.mean(esm_validation_res[esm_validation_res['t1-t3_acc_status'] == "A-A"].r2_delta)))
+    esm_validation_res.to_csv("../../data/esm_validation.csv")
+
+    plot_validation_results_acc_status(esm_validation_res, output_dir)
+
+
         
 
 if __name__ == "__main__":

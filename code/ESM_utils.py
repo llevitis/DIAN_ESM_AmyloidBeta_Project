@@ -5,8 +5,10 @@ import nibabel as ni
 import itertools
 from glob import glob
 import statsmodels.distributions.empirical_distribution as ed
+import statsmodels.formula.api as smf
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.express as px
 from scipy import stats
 from scipy.io import savemat,loadmat
 from nilearn import input_data, image
@@ -668,7 +670,7 @@ def Evaluate_Model(roi, models, bins=None):
         plt.show()
 
 def Plot_Probabilites(prob_matrix, col_order = [], ind_order = [], 
-					  vmin=None, vmax=None, figsize=(), cmap=None, ax=None):
+					  vmin=None, vmax=None, figsize=(), cmap=None, ax=None, path=None):
     '''
     Given the output matrix of Convert_ROI_values_to_Probabilities, will plot
     a heatmap of all probability values sorted in such a manner to demonstrate
@@ -701,8 +703,10 @@ def Plot_Probabilites(prob_matrix, col_order = [], ind_order = [],
     g = sns.heatmap(forplot, vmin, vmax, cmap=cmap, ax=ax)
     plt.xlabel('Regions (highest - lowest p)', fontsize=24)
     plt.ylabel('Subjects (lowest - highest p)', fontsize=24)
-    plt.show()
-    
+    if path != None: 
+        plt.yticks([])
+        plt.tight_layout()
+        plt.savefig(path)
     return [ind_order,col_order]
 
 
@@ -1854,3 +1858,188 @@ def create_connectome_from_1d(cx, method, symmetric):
                 weight_cx = weight_cx + rotator
     
     return weight_cx
+
+def plot_best_epicenter_x_subs(output_files, subs_to_select=None, color="blue",title=None, plot=True, dataset="DIAN"):
+    clinical_df = pandas.read_csv("../../data/DIAN/participant_metadata/CLINICAL_D1801.csv")
+    pib_df = pandas.read_csv("../../data/DIAN/participant_metadata/pib_D1801.csv")
+    genetic_df = pandas.read_csv("../../data/DIAN/participant_metadata/GENETIC_D1801.csv")
+    output_files = sorted(output_files)
+    example_output = loadmat(output_files[0])
+    subs = list(example_output['sub_ids'])
+    visit_labels = example_output['visit_labels']
+    if dataset == "DIAN": 
+        rois = list(x.rstrip()[5:] for x in example_output['roi_labels'][0:38])
+    elif dataset == "ADNI":
+        rois = list(x.rstrip()[5:] for x in example_output['roi_labels'][0:39])
+    pup_rois = ["precuneus", "superior frontal", "rostral middle frontal", "lateral orbitofrontal", "medial orbitofrontal",
+               "superior temporal", "middle temporal"]
+    composite_roi_list = []
+    for i,roi in enumerate(example_output['roi_labels']): 
+        for roi2 in pup_rois: 
+            if roi2 in roi.lower():
+                composite_roi_list.append(i)
+    sub_epicenter_df = pandas.DataFrame(columns=rois, index=subs)
+    sub_epicenter_df.loc[:, 'visit_label'] = visit_labels
+    all_rois = []
+    for i,f in enumerate(output_files): 
+        mat = loadmat(f)
+        ref_pattern = mat['ref_pattern']
+        pred_pattern = mat['model_solutions0']
+        if dataset == "DIAN":
+            epicenter_idx = output_files[i].split("/")[-1].split("_")[8].split("-")[1]
+        elif dataset == "ADNI":
+            epicenter_idx = output_files[i].split("/")[-1].split("_")[2].split("-")[1]
+        if epicenter_idx.isdigit():
+            epicenter_name = rois[int(epicenter_idx)-1]
+        else:
+            epicenter_name = epicenter_idx
+        all_rois.append(epicenter_name)
+        for i, sub in enumerate(sub_epicenter_df.index): 
+            r,p = stats.pearsonr(ref_pattern[:,i], pred_pattern[:,i])
+            r2 = r**2
+            sub_epicenter_df.loc[sub, epicenter_name] = r2
+            sub_epicenter_df.loc[sub, 'esm_idx'] = i
+    for i,sub in enumerate(sub_epicenter_df.index): 
+        visit = sub_epicenter_df.loc[sub, "visit_label"]
+        sub_epicenter_df.loc[sub, "AB_Composite"] = np.mean(ref_pattern[composite_roi_list,i])
+        if dataset == "DIAN":
+            sub_epicenter_df.loc[sub, "DIAN_EYO"] = clinical_df[(clinical_df.IMAGID == sub) & (clinical_df.visit == visit)].DIAN_EYO.values[0]
+            ab_composite_bs = pib_df[(pib_df.IMAGID == sub) & (pib_df.visit == visit)].PIB_fSUVR_TOT_CORTMEAN.values[0] / pib_df[(pib_df.IMAGID == sub) & (pib_df.visit == visit)].PIB_fSUVR_TOT_BRAINSTEM.values[0]
+            sub_epicenter_df.loc[sub, 'AB_COMPOSITE_SUVR_BS'] = ab_composite_bs
+            if sub_epicenter_df.loc[sub, "AB_Composite"] > 0.1:
+                sub_epicenter_df.loc[sub, "AB_Positive"] = True
+            else:
+                sub_epicenter_df.loc[sub, "AB_Positive"] = False
+            if sub_epicenter_df.loc[sub, "AB_COMPOSITE_SUVR_BS"] > 0.79:
+                sub_epicenter_df.loc[sub, "AB_POSITIVE_SUVR"] = True
+            else:
+                sub_epicenter_df.loc[sub, "AB_POSITIVE_SUVR"] = False
+            sub_epicenter_df.loc[sub, 'mut_type'] = genetic_df[genetic_df.IMAGID == sub].MUTATIONTYPE.values[0]
+            if sub_epicenter_df.loc[sub, 'mut_type'] == 1: 
+                sub_epicenter_df.loc[sub, 'mut_type_name'] = "PSEN1"
+            elif sub_epicenter_df.loc[sub, 'mut_type'] == 2: 
+                sub_epicenter_df.loc[sub, 'mut_type_name'] = "PSEN2"
+            else:
+                sub_epicenter_df.loc[sub, 'mut_type_name'] = "APP"
+            sub_epicenter_df.loc[sub, 'CDR'] = clinical_df[(clinical_df.IMAGID == sub) & (clinical_df.visit == visit)].cdrglob.values[0]
+    for sub in sub_epicenter_df.index: 
+        epicenter_vals = list(sub_epicenter_df.loc[sub, all_rois])
+        esm_idx = int(sub_epicenter_df.loc[sub, 'esm_idx'])
+        idx = epicenter_vals.index(max(epicenter_vals))
+        roi = all_rois[idx]
+        sub_epicenter_df.loc[sub, "Best_Epicenter"] = roi
+        sub_epicenter_df.loc[sub, "Best_Epicenter_R2"] = sub_epicenter_df.loc[sub, roi]
+        best_exp = loadmat(output_files[idx])
+        sub_epicenter_df.loc[sub, "BETAS_est"] = list(best_exp['BETAS_est'])[esm_idx]
+        sub_epicenter_df.loc[sub, "DELTAS_est"] = list(best_exp['DELTAS_est'])[esm_idx]
+        
+    if subs_to_select != None:
+        subs = subs_to_select
+    if plot == True:
+        plt.figure(figsize=(20,10))
+        g = sns.countplot(sub_epicenter_df.loc[subs, "Best_Epicenter"],
+                          color=color,
+                          order = sub_epicenter_df.loc[subs, "Best_Epicenter"].value_counts().index)
+        g.set_xticklabels(g.get_xticklabels(), rotation=45, horizontalalignment='right',fontsize=16)
+        g.set_title(title, fontsize=20)
+        g.set_xlabel("Epicenter", fontsize=20)
+        g.set_ylabel("Count", fontsize=20)
+        g.set_yticklabels(g.get_yticks(), fontsize=16)
+        plt.show()
+        plt.close()
+    return sub_epicenter_df
+
+
+def group_level_performance(output_files, subs_to_select=None, dataset="DIAN"):
+    output_files = sorted(output_files)
+    example_output = loadmat(output_files[0])
+    visit_labels = example_output['visit_labels']
+    if dataset == "DIAN":  
+        rois = list(x.rstrip()[5:] for x in example_output['roi_labels'][0:38])
+    elif dataset == "ADNI":
+        rois = list(x.rstrip()[5:] for x in example_output['roi_labels'][0:39])
+    subs = list(example_output['sub_ids'].flatten())
+    # for i,roi in enumerate(example_output['roi_labels']): 
+    #     for roi2 in pup_rois: 
+    #         if roi2 in roi.lower():
+    #             composite_roi_list.append(i)
+    global_performance_dict = {}
+    if dataset == "DIAN":
+        num_files = 38 
+    elif dataset == "ADNI":
+        num_files = 39
+    for i,f in enumerate(output_files[0:num_files]): 
+        mat = loadmat(f)
+        ref_pattern_df = pandas.DataFrame(index=subs, columns=example_output['roi_labels'])
+        ref_pattern_df.loc[:,:] = mat['ref_pattern'].transpose()
+        pred_pattern_df = pandas.DataFrame(index=subs, columns=example_output['roi_labels'])
+        pred_pattern_df.loc[:,:] = mat['model_solutions0'].transpose()
+        if dataset == "DIAN":
+            epicenter_idx = output_files[i].split("/")[-1].split("_")[8].split("-")[1]
+        elif dataset == "ADNI":
+            epicenter_idx = output_files[i].split("/")[-1].split("_")[2].split("-")[1]
+        if epicenter_idx.isdigit():
+            epicenter_name = rois[int(epicenter_idx)-1]
+        else:
+            epicenter_name = epicenter_idx
+        if subs_to_select == None:
+            subs_to_select = subs
+        r,p = stats.pearsonr(ref_pattern_df.loc[subs_to_select, :].mean(0), pred_pattern_df.loc[subs,:].mean(0))
+        r2 = r ** 2
+        global_performance_dict[epicenter_name] = r2
+    return global_performance_dict
+    
+def plot_epicenter_frequency(df, positivity_colname, filepath): 
+    fig = px.histogram(df, x="Best_Epicenter", y="Best_Epicenter", color=positivity_colname)
+    fig.update_layout(
+        barmode='stack', 
+        xaxis={'categoryorder': 'total descending'},
+        title={
+            'text':"Epicenter Frequency Across All Subjects",
+            'y':0.9,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        },
+        xaxis_title="Epicenter",
+        yaxis_title="Frequency",
+        uniformtext_minsize=16, xaxis_showgrid=False, yaxis_showgrid=False,
+                    plot_bgcolor="white",
+        legend_title = "A" + u"\u03b2" + " Positive",
+        legend=dict(
+            x=.8,
+            y=1,
+            traceorder="normal",
+            bgcolor="White",
+            borderwidth=1
+        )
+    )
+    fig.update_xaxes(showline=True, linewidth=2, linecolor='black')
+    fig.update_yaxes(showline=True, linewidth=2, linecolor='black')
+
+    fig.update_layout(width=1000, height=600)
+    fig.write_image(filepath)
+
+def whole_brain_epicenter_group_differences(df, roi_labels, epicenter_group_columns): 
+    ''' This is a function that computes group differences across different groups (
+    in this case, with respect to the best epicenter subgroup). 
+     
+    df = pandas dataframe 
+    roi_labels = list of region names to use 
+    epicenter_group_columns = dummy one hot encoded columns corresponding to each epicenter subgroup
+
+
+    '''
+    results = pd.DataFrame(index=roi_labels)
+    for region in roi_labels:
+        for col in epicenter_group_columns:
+            fitmod = smf.ols("Q('{0}') ~ C({1}) + Age".format(region,col),
+                            data=df.fit())
+            t = fitmod.tvalues[1]
+            p = fitmod.pvalues[1]
+            results.loc[region,'%s_p'%col] = p
+            results.loc[region,'%s_t'%col] = t
+    for col in egp_cols:
+        fdrs = multipletests(results['%s_p'%col].values,method='fdr_bh')
+        results.loc[:,'%s_FDR'%col] = fdrs[1]
+    return results
