@@ -43,7 +43,7 @@ def apply_transform_pet_t1w(pet_moco_summed_file, t1w_file, pet_coregistered_mat
 def create_coregistered_qc_image(pet_coregistered_file, t1w_file):
     pet_coregistered_img = nib.load(pet_coregistered_file)
     t1w_img = nib.load(t1w_file)
-    plotting.plot_roi(pet_coregistered_img, bg_img=t1w_img, output_file=pet_coregistered_file.replace('.nii.gz', '.png'))
+    plotting.plot_roi(pet_coregistered_img, bg_img=t1w_img, draw_cross=False, alpha=0.3, output_file=pet_coregistered_file.replace('.nii.gz', '.png'))
 
 def main(): 
     parser = ArgumentParser()
