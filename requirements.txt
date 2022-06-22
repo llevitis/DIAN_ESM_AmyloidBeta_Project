@@ -37,7 +37,7 @@ nexus-sdk==0.3.2
 nibabel==3.0.1
 nilearn==0.6.2
 notebook==6.0.3
-numpy==1.18.1
+numpy==1.22.0
 packaging==20.1
 pandas==1.0.1
 pandocfilters==1.4.2
